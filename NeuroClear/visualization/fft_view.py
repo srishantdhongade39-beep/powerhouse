@@ -111,7 +111,7 @@ def render_fft_view(
         st.plotly_chart(fig, use_container_width=True)
 
         if peaks:
-            st.warning(f"⚠️ **{len(peaks)} Periodic Hardware Spike Pair(s) Detected** (Gantry vibration / power harmonics active).")
+            st.warning(f"⚠️ **{len(peaks)} Periodic Harmonic Wave(s) Detected ({len(peaks) * 2} Symmetrical Circle Markers on Plot)** — Gantry vibration / power harmonics active.")
         else:
             st.success("✅ **Nominal Scanner Frequency Profile (0 Periodic Harmonics Detected)**")
             st.caption("Standard clinical diagnostic scans do not suffer from motor vibration harmonics. Spatial quantum photon noise reduction is actively processed by the edge-preserving engine.")
