@@ -17,8 +17,6 @@ _MATLAB_ENGINE: Any = None
 _MATLAB_AVAILABLE: Optional[bool] = None
 
 
-import importlib.util
-
 def is_matlab_available() -> Tuple[bool, str]:
     """
     Check if the official MATLAB Engine for Python (matlabengine) is installed
@@ -28,13 +26,16 @@ def is_matlab_available() -> Tuple[bool, str]:
     if _MATLAB_AVAILABLE is not None:
         return _MATLAB_AVAILABLE, "MATLAB Engine for Python is available." if _MATLAB_AVAILABLE else "matlabengine package is not installed."
     try:
-        spec = importlib.util.find_spec("matlab")
-        if spec is not None:
-            spec_eng = importlib.util.find_spec("matlab.engine")
-            if spec_eng is not None:
-                _MATLAB_AVAILABLE = True
-                return True, "MATLAB Engine for Python is available."
-    except Exception:
+        import sys
+        if "matlab.engine" in sys.modules:
+            _MATLAB_AVAILABLE = True
+            return True, "MATLAB Engine for Python is available."
+        import importlib
+        mod = importlib.import_module("matlab.engine")
+        if mod is not None:
+            _MATLAB_AVAILABLE = True
+            return True, "MATLAB Engine for Python is available."
+    except (ImportError, ModuleNotFoundError, Exception):
         pass
     _MATLAB_AVAILABLE = False
     return False, "matlabengine package is not installed. Run 'pip install matlabengine' to enable live MATLAB execution."
