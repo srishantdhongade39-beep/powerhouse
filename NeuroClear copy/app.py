@@ -697,17 +697,8 @@ def main() -> None:
                                     img_f.seek(0)
                                     pil_img = Image.open(img_f).convert("L")
                                     arr_gray = np.array(pil_img, dtype=np.float32)
-                                    # Clinically aligned HU calibration: air(-1000) → CSF/parenchyma(0-80) → bone(400+)
-                                    norm = arr_gray / 255.0
-                                    hu = np.where(
-                                        norm < 0.05,
-                                        -1000.0 + (norm / 0.05) * 900.0,      # Air / background: -1000 to -100 HU
-                                        np.where(
-                                            norm > 0.85,
-                                            150.0 + (norm - 0.85) / 0.15 * 850.0,  # Dense bone: 150→1000 HU
-                                            -5.0 + (norm - 0.05) / 0.80 * 105.0,   # CSF & Brain tissue: -5→100 HU (parenchyma ~35-45 HU)
-                                        )
-                                    ).astype(np.float32)
+                                    # Preserve true 1:1 uncompressed image dynamic range [0, 255]
+                                    hu = arr_gray.copy()
 
                                     raw_ds = create_synthetic_dicom_dataset(
                                         hu,
@@ -728,11 +719,13 @@ def main() -> None:
                                     st.session_state.metadata["total_slices"] = len(hu_list)
                                     st.session_state.loaded_source_name = f"Uploaded Series: {sorted_img_files[0].name} ({len(hu_list)}s)"
                                     st.session_state.processed_cache = {}
-                                    st.session_state.preset_choice = "Soft Tissue"
-                                    st.session_state.window_center = 50.0
-                                    st.session_state.window_width = 350.0
+                                    st.session_state.preset_choice = "Full Range"
+                                    st.session_state.window_center = 128.0
+                                    st.session_state.window_width = 256.0
+                                    st.session_state.aniso_kappa = 12.0
+                                    st.session_state.aniso_n_iter = 4
                                     st.session_state.last_upload_sig = upload_sig
-                                    st.success(f"Successfully loaded {len(hu_list)} CT slice(s)!")
+                                    st.success(f"Successfully loaded {len(hu_list)} CT slice(s) with full clarity!")
                                     st.rerun()
                         except Exception as ex:
                             st.error(f"Import error: {ex}")

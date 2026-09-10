@@ -53,6 +53,11 @@ WINDOW_PRESETS: Dict[str, Dict[str, Any]] = {
         "width": 1800.0,
         "description": "Cranial Bone & Fractures (-500 to 1300 HU)",
     },
+    "Full Range": {
+        "center": 128.0,
+        "width": 256.0,
+        "description": "Full Dynamic Range (0 to 255 for standard CT images)",
+    },
 }
 
 
