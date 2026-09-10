@@ -10,6 +10,7 @@ with real-time quality metric benchmarking (PSNR, SSIM, Edge Preservation Index)
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import time
 import cv2
 import numpy as np
@@ -646,57 +647,86 @@ def main() -> None:
                     load_2d_phantom()
                     st.rerun()
                 st.divider()
-                uploaded_files = st.file_uploader("Import DICOM (.dcm) / Image", type=["dcm", "dicom", "png", "jpg", "tif"], accept_multiple_files=True)
+                uploaded_files = st.file_uploader(
+                    "Import DICOM (.dcm) / Image",
+                    type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
+                    accept_multiple_files=True,
+                    key="study_file_uploader",
+                )
                 if uploaded_files:
-                    try:
-                        dcm_files = [f for f in uploaded_files if f.name.lower().endswith((".dcm", ".dicom"))]
-                        if dcm_files:
-                            sorted_ds = load_dicom_files_list(dcm_files)
-                            hu_list = [convert_to_hounsfield_units(ds) for ds in sorted_ds]
-                            st.session_state.volume_hu = hu_list
-                            st.session_state.volume_clean = []
-                            st.session_state.volume_datasets = sorted_ds
-                            st.session_state.active_slice_idx = len(hu_list) // 2
-                            st.session_state.metadata = get_dicom_metadata(sorted_ds[0])
-                            st.session_state.loaded_source_name = f"Uploaded DICOM ({len(hu_list)}s)"
-                            st.session_state.processed_cache = {}
-                            st.success("Study imported.")
-                            st.rerun()
-                        else:
-                            img_file = uploaded_files[0]
-                            pil_img = Image.open(img_file).convert("L")
-                            arr_gray = np.array(pil_img, dtype=np.float32)
-                            # Full clinical HU calibration: air(-1000) → soft tissue(0-80) → bone(400+)
-                            norm = arr_gray / 255.0
-                            hu = np.where(
-                                norm < 0.04,
-                                -1000.0 + norm * 2000.0,   # Air / background
-                                np.where(
-                                    norm > 0.85,
-                                    300.0 + (norm - 0.85) / 0.15 * 1100.0,  # Dense bone 300→1400 HU
-                                    (norm - 0.04) / 0.81 * 400.0 - 50.0,    # Soft tissue -50→350 HU
-                                )
-                            ).astype(np.float32)
-                            raw_ds = create_synthetic_dicom_dataset(
-                                hu,
-                                patient_id=f"IMG_{img_file.name[:12]}",
-                                series_desc=f"Imported Image ({img_file.name})",
-                            )
-                            st.session_state.volume_hu = [hu]
-                            st.session_state.volume_clean = []
-                            st.session_state.volume_datasets = [raw_ds]
-                            st.session_state.active_slice_idx = 0
-                            st.session_state.metadata = get_dicom_metadata(raw_ds)
-                            st.session_state.loaded_source_name = f"Uploaded Image: {img_file.name}"
-                            st.session_state.processed_cache = {}
-                            # Auto-select Soft Tissue window for uploaded PNG scans
-                            st.session_state.preset_choice = "Soft Tissue"
-                            st.session_state.window_center = 50.0
-                            st.session_state.window_width = 350.0
-                            st.success("Image imported as CT slice.")
-                            st.rerun()
-                    except Exception as ex:
-                        st.error(f"Import error: {ex}")
+                    upload_sig = tuple((f.name, f.size) for f in uploaded_files)
+                    if upload_sig != st.session_state.get("last_upload_sig"):
+                        try:
+                            dcm_files = [f for f in uploaded_files if f.name.lower().endswith((".dcm", ".dicom"))]
+                            if dcm_files:
+                                for f in dcm_files:
+                                    f.seek(0)
+                                sorted_ds = load_dicom_files_list(dcm_files)
+                                hu_list = [convert_to_hounsfield_units(ds) for ds in sorted_ds]
+                                st.session_state.volume_hu = hu_list
+                                st.session_state.volume_clean = []
+                                st.session_state.volume_datasets = sorted_ds
+                                st.session_state.active_slice_idx = len(hu_list) // 2
+                                st.session_state.metadata = get_dicom_metadata(sorted_ds[0])
+                                st.session_state.metadata["total_slices"] = len(hu_list)
+                                st.session_state.loaded_source_name = f"Uploaded DICOM ({len(hu_list)}s)"
+                                st.session_state.processed_cache = {}
+                                st.session_state.last_upload_sig = upload_sig
+                                st.success(f"Successfully loaded {len(hu_list)} DICOM slice(s).")
+                                st.rerun()
+                            else:
+                                # Multi-slice Image support (PNG, JPG, TIFF)
+                                def _nat_key(f_obj):
+                                    parts = re.split(r'(\d+)', f_obj.name)
+                                    return [int(t) if t.isdigit() else t.lower() for t in parts]
+
+                                sorted_img_files = sorted(uploaded_files, key=_nat_key)
+                                hu_list = []
+                                ds_list = []
+
+                                for idx_img, img_f in enumerate(sorted_img_files):
+                                    img_f.seek(0)
+                                    pil_img = Image.open(img_f).convert("L")
+                                    arr_gray = np.array(pil_img, dtype=np.float32)
+                                    # Full clinical HU calibration: air(-1000) → soft tissue(0-80) → bone(400+)
+                                    norm = arr_gray / 255.0
+                                    hu = np.where(
+                                        norm < 0.04,
+                                        -1000.0 + norm * 2000.0,   # Air / background
+                                        np.where(
+                                            norm > 0.85,
+                                            300.0 + (norm - 0.85) / 0.15 * 1100.0,  # Dense bone 300→1400 HU
+                                            (norm - 0.04) / 0.81 * 400.0 - 50.0,    # Soft tissue -50→350 HU
+                                        )
+                                    ).astype(np.float32)
+
+                                    raw_ds = create_synthetic_dicom_dataset(
+                                        hu,
+                                        patient_id=f"IMG_{img_f.name[:12]}",
+                                        series_desc=f"Imported Series ({len(sorted_img_files)} Slices)",
+                                    )
+                                    raw_ds.InstanceNumber = idx_img + 1
+                                    raw_ds.SliceLocation = float(idx_img * 3.0)
+                                    hu_list.append(hu)
+                                    ds_list.append(raw_ds)
+
+                                if hu_list:
+                                    st.session_state.volume_hu = hu_list
+                                    st.session_state.volume_clean = []
+                                    st.session_state.volume_datasets = ds_list
+                                    st.session_state.active_slice_idx = 0
+                                    st.session_state.metadata = get_dicom_metadata(ds_list[0])
+                                    st.session_state.metadata["total_slices"] = len(hu_list)
+                                    st.session_state.loaded_source_name = f"Uploaded Series: {sorted_img_files[0].name} ({len(hu_list)}s)"
+                                    st.session_state.processed_cache = {}
+                                    st.session_state.preset_choice = "Soft Tissue"
+                                    st.session_state.window_center = 50.0
+                                    st.session_state.window_width = 350.0
+                                    st.session_state.last_upload_sig = upload_sig
+                                    st.success(f"Successfully loaded {len(hu_list)} CT slice(s)!")
+                                    st.rerun()
+                        except Exception as ex:
+                            st.error(f"Import error: {ex}")
 
         with btn_col2:
             more_pop = st.popover("⚙️ Operations ▾", use_container_width=True)
