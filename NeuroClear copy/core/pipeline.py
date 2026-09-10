@@ -81,8 +81,9 @@ def run_neuroclear_pipeline(
     # 2. Initial Noise Analysis
     initial_noise = analyze_noise(hu_original)
 
-    # 3. Periodic Noise Removal (Notch Filtering)
-    if not skip_periodic:
+    # 3. Periodic Noise Removal (Notch Filtering) - Only runs if coherent harmonics are detected
+    periodic_detected = initial_noise.get("periodic", {}).get("detected", False)
+    if not skip_periodic and periodic_detected:
         hu_periodic, notch_mask = remove_periodic_noise(
             hu_original,
             noise_info=initial_noise["periodic"],
@@ -100,8 +101,8 @@ def run_neuroclear_pipeline(
             "strength": poisson_strength,
             "use_anscombe": use_anscombe,
             "detail_boost": detail_boost,
-            "n_iter": opts.get("n_iter", 8),
-            "kappa": opts.get("kappa", 15.0),
+            "n_iter": opts.get("n_iter", 4),
+            "kappa": opts.get("kappa", 4.5),
             "conduction_method": opts.get("conduction_method", "exponential"),
         }
         hu_denoised_raw = denoise_poisson(hu_periodic, params=poisson_params)

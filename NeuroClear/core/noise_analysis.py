@@ -51,7 +51,7 @@ def detect_periodic_noise(
     log_mag = np.log1p(magnitude)
 
     # Estimate smooth natural anatomical background spectrum using median filter
-    bg = ndimage.median_filter(log_mag, size=5)
+    bg = ndimage.median_filter(log_mag, size=7)
     diff = log_mag - bg
 
     # Create mask excluding central DC region and border edges
@@ -69,8 +69,8 @@ def detect_periodic_noise(
     valid_mask[max(0, cr - 1):min(h, cr + 2), :] = False
     valid_mask[:, max(0, cc - 1):min(w, cc + 2)] = False
 
-    # Identify local maxima of the frequency magnitude spectrum
-    local_max = (ndimage.maximum_filter(log_mag, size=min_distance) == log_mag)
+    # Identify local maxima of the frequency difference spectrum
+    local_max = (ndimage.maximum_filter(diff, size=min_distance) == diff) & (ndimage.maximum_filter(log_mag, size=min_distance) == log_mag)
     maxima_mask = local_max & valid_mask
 
     if not np.any(maxima_mask):
@@ -118,7 +118,7 @@ def detect_periodic_noise(
         conj_c = cc - v
 
         # A genuine scanner periodic artifact exhibits conjugate Fourier symmetry
-        if not (0 <= conj_r < h and 0 <= conj_c < w and diff[conj_r, conj_c] >= thresh * 0.60):
+        if not (0 <= conj_r < h and 0 <= conj_c < w and diff[conj_r, conj_c] >= thresh * 0.50):
             continue
 
         peak_info = {
