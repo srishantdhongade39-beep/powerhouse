@@ -100,6 +100,9 @@ def render_fft_view(
             )
 
         fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#0A0E17",
+            plot_bgcolor="#0A0E17",
             height=460,
             margin=dict(l=10, r=10, t=30, b=10),
             xaxis=dict(showgrid=False, zeroline=False),
@@ -126,6 +129,9 @@ def render_fft_view(
                 )
             )
             mask_fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0A0E17",
+                plot_bgcolor="#0A0E17",
                 height=460,
                 margin=dict(l=10, r=10, t=30, b=10),
                 xaxis=dict(showgrid=False, zeroline=False),
@@ -135,3 +141,4 @@ def render_fft_view(
             st.caption("Notch filter smoothly zeroes out detected artifact spike coordinates while passing 100% of anatomical frequency spectrum.")
         else:
             st.info("Run the denoising pipeline to generate the notch reject filter mask.")
+

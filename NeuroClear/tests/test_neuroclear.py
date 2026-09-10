@@ -191,3 +191,25 @@ def test_full_pipeline_orchestration(synthetic_slice):
     gt_m = results["ground_truth_metrics"]
     assert gt_m["output_psnr_db"] > gt_m["input_psnr_db"]
     assert gt_m["output_ssim"] >= gt_m["input_ssim"]
+
+
+def test_volume_generation():
+    from core.synthetic_data import generate_brain_ct_volume
+    noisy_v, clean_v, datasets = generate_brain_ct_volume(num_slices=4, size=64)
+    assert len(noisy_v) == 4
+    assert len(clean_v) == 4
+    assert len(datasets) == 4
+    assert noisy_v[0].shape == (64, 64)
+    assert datasets[0].SliceThickness == 3.0
+    assert hasattr(datasets[0], "SliceLocation")
+
+
+def test_multi_slice_sorting():
+    from core.dicom_loader import sort_dicom_slices
+    from core.synthetic_data import generate_brain_ct_volume
+    _, _, datasets = generate_brain_ct_volume(num_slices=4, size=64)
+    # Shuffle datasets
+    shuffled = [datasets[2], datasets[0], datasets[3], datasets[1]]
+    sorted_res = sort_dicom_slices(shuffled)
+    assert [d.InstanceNumber for d in sorted_res] == [1, 2, 3, 4]
+

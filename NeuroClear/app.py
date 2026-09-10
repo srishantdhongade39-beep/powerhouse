@@ -1,14 +1,16 @@
 """
-NeuroClear - SEC086: CT Image Denoising
------------------------------------------
-Interactive Streamlit Application for Adaptive Brain CT Image Denoising.
+NeuroClear - SEC086: Medical CT DICOM Workstation & Denoising Platform
+-----------------------------------------------------------------------
+Interactive medical DICOM CT viewer and adaptive signal-processing platform.
 Combines frequency-domain periodic artifact removal (adaptive notch filtering)
 and spatial Poisson noise reduction (Anscombe transform + edge-preserving filters)
 with real-time quality metric benchmarking (PSNR, SSIM, Edge Preservation Index).
 """
 
 from io import BytesIO
-from typing import Any, Dict, Optional, Tuple
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pydicom
 from PIL import Image
@@ -20,6 +22,8 @@ from core.dicom_loader import (
     convert_to_hounsfield_units,
     get_dicom_metadata,
     load_dicom,
+    load_dicom_files_list,
+    sort_dicom_slices,
 )
 from core.noise_analysis import analyze_noise, detect_periodic_noise, estimate_poisson_noise
 from core.periodic_denoise import create_notch_filter, remove_periodic_noise
@@ -34,58 +38,126 @@ from core.quality_metrics import (
 from core.synthetic_data import (
     create_synthetic_dicom_dataset,
     generate_brain_ct_phantom,
+    generate_brain_ct_volume,
 )
-from visualization.ct_viewer import render_ct_viewer, render_interactive_hu_inspector
+from visualization.ct_viewer import (
+    render_ct_viewer,
+    render_interactive_hu_inspector,
+    render_slice_navigation_bar,
+)
 from visualization.difference_map import render_difference_map
 from visualization.fft_view import render_fft_view
 
 # Streamlit Page Config
 st.set_page_config(
-    page_title="NeuroClear — SEC086 CT Denoising",
+    page_title="NeuroClear — Medical DICOM Workstation (SEC086)",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS for polished, modern typography and clean styling
+# Custom CSS for Dark Medical Workstation Theme
 st.markdown(
     """
     <style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #1E293B;
-        margin-bottom: 0.2rem;
+    /* Dark Medical Workstation Base Styles */
+    .stApp {
+        background-color: #0A0E17;
+        color: #E2E8F0;
     }
-    .sub-header {
-        font-size: 1.05rem;
-        color: #64748B;
+    
+    /* Top Workstation Header */
+    .workstation-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(90deg, #0F172A 0%, #1E293B 100%);
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 12px 20px;
         margin-bottom: 1rem;
     }
-    .metric-card {
-        background-color: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
-        padding: 12px 16px;
-        text-align: center;
-    }
-    .metric-val {
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #0F172A;
-    }
-    .metric-lbl {
-        font-size: 0.82rem;
-        color: #64748B;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    .stTabs [data-baseweb="tab-list"] {
+    .brand-title {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #F8FAFC;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
         gap: 8px;
     }
-    .stTabs [data-baseweb="tab"] {
-        padding: 10px 18px;
+    .brand-subtitle {
+        font-size: 0.85rem;
+        color: #94A3B8;
+        font-weight: 500;
+    }
+    .hud-badge {
+        display: inline-block;
+        background-color: #1E293B;
+        border: 1px solid #00E5FF;
+        color: #00E5FF;
+        font-family: monospace;
+        font-size: 0.8rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+        margin-right: 6px;
+    }
+    .disclaimer-badge {
+        display: inline-block;
+        background-color: rgba(245, 158, 11, 0.15);
+        border: 1px solid #F59E0B;
+        color: #FCD34D;
+        font-size: 0.78rem;
+        padding: 4px 10px;
+        border-radius: 4px;
         font-weight: 600;
+    }
+
+    /* Metric Cards */
+    .kpi-card {
+        background: #111827;
+        border: 1px solid #1F2937;
+        border-radius: 8px;
+        padding: 12px 14px;
+        text-align: center;
+    }
+    .kpi-val {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #00E5FF;
+        font-family: monospace;
+    }
+    .kpi-lbl {
+        font-size: 0.76rem;
+        color: #94A3B8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 2px;
+    }
+    
+    /* Side Bar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #0F172A;
+        border-right: 1px solid #1E293B;
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #0F172A;
+        padding: 6px;
+        border-radius: 8px;
+        gap: 6px;
+        border: 1px solid #1E293B;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 8px 16px;
+        font-weight: 600;
+        color: #94A3B8;
+        border-radius: 6px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #1E293B !important;
+        color: #00E5FF !important;
     }
     </style>
     """,
@@ -95,195 +167,247 @@ st.markdown(
 
 def init_session_state() -> None:
     """Initialize application session state variables."""
-    if "hu_slice" not in st.session_state:
-        st.session_state.hu_slice = None
-    if "clean_slice" not in st.session_state:
-        st.session_state.clean_slice = None
+    if "volume_hu" not in st.session_state:
+        st.session_state.volume_hu = []
+    if "volume_clean" not in st.session_state:
+        st.session_state.volume_clean = []
+    if "volume_datasets" not in st.session_state:
+        st.session_state.volume_datasets = []
+    if "active_slice_idx" not in st.session_state:
+        st.session_state.active_slice_idx = 0
+    if "processed_cache" not in st.session_state:
+        st.session_state.processed_cache = {}
     if "metadata" not in st.session_state:
         st.session_state.metadata = None
-    if "pipeline_results" not in st.session_state:
-        st.session_state.pipeline_results = None
     if "loaded_source_name" not in st.session_state:
         st.session_state.loaded_source_name = None
-    if "raw_dataset" not in st.session_state:
-        st.session_state.raw_dataset = None
+    if "preset_choice" not in st.session_state:
+        st.session_state.preset_choice = "Brain"
+    if "noise_analyzed" not in st.session_state:
+        st.session_state.noise_analyzed = False
 
 
-def load_demo_phantom() -> None:
-    """Generate and load synthetic brain CT phantom with injected noise."""
-    with st.spinner("Generating calibrated Brain CT Phantom with injected artifacts..."):
+def load_volumetric_brain_phantom() -> None:
+    """Generate and load 3D multi-slice volumetric brain CT phantom (16 axial slices)."""
+    with st.spinner("Generating 3D Calibrated Brain CT Volume (16 Axial Slices)..."):
+        noisy_v, clean_v, datasets = generate_brain_ct_volume(
+            num_slices=16,
+            size=256,
+            add_periodic_artifact=True,
+            add_poisson_noise=True,
+            poisson_photon_count=1100.0,
+            random_seed=42,
+        )
+        st.session_state.volume_hu = noisy_v
+        st.session_state.volume_clean = clean_v
+        st.session_state.volume_datasets = datasets
+        st.session_state.active_slice_idx = 7  # Mid-ventricle level
+        st.session_state.metadata = get_dicom_metadata(datasets[0])
+        st.session_state.metadata["series_description"] = "Volumetric 3D Brain CT (16 Slices, Harmonic + Quantum Noise)"
+        st.session_state.metadata["total_slices"] = len(noisy_v)
+        st.session_state.loaded_source_name = "3D Brain CT Volume Phantom (16 Slices)"
+        st.session_state.processed_cache = {}
+        st.session_state.preset_choice = "Brain"
+        st.session_state.profile_choice_idx = 1
+
+
+def load_real_clinical_sample() -> None:
+    """Load sample real Brain CT clinical DICOM slice from data directory."""
+    sample_path = Path(__file__).parent / "data" / "sample_real_brain_ct.dcm"
+    if sample_path.exists():
+        ds = load_dicom(str(sample_path))
+        hu = convert_to_hounsfield_units(ds)
+        st.session_state.volume_hu = [hu]
+        st.session_state.volume_clean = []
+        st.session_state.volume_datasets = [ds]
+        st.session_state.active_slice_idx = 0
+        st.session_state.metadata = get_dicom_metadata(ds)
+        st.session_state.metadata["total_slices"] = 1
+        st.session_state.loaded_source_name = "Clinical Brain CT (Patient 1CT1, 128×128)"
+        st.session_state.processed_cache = {}
+        st.session_state.preset_choice = "Brain"
+        st.session_state.profile_choice_idx = 1
+
+
+def load_highres_spine_sample() -> None:
+    """Load high-resolution 1024×1024 clinical Spine CT slice with trabecular bone structure."""
+    sample_path = Path(__file__).parent / "data" / "sample_highres_spine_ct.dcm"
+    if sample_path.exists():
+        ds = load_dicom(str(sample_path))
+        hu = convert_to_hounsfield_units(ds)
+        st.session_state.volume_hu = [hu]
+        st.session_state.volume_clean = []
+        st.session_state.volume_datasets = [ds]
+        st.session_state.active_slice_idx = 0
+        st.session_state.metadata = get_dicom_metadata(ds)
+        st.session_state.metadata["total_slices"] = 1
+        st.session_state.loaded_source_name = "High-Res Clinical Spine CT (1024×1024)"
+        st.session_state.processed_cache = {}
+        st.session_state.preset_choice = "Bone"
+        st.session_state.profile_choice_idx = 0
+
+
+def load_2d_phantom() -> None:
+    """Generate and load calibrated 2D single phantom slice."""
+    with st.spinner("Generating calibrated Brain CT Phantom slice..."):
         noisy, clean, info = generate_brain_ct_phantom(
             size=256,
             add_periodic_artifact=True,
             periodic_amplitude=35.0,
-            periodic_freq=(0.12, 0.08),
             add_poisson_noise=True,
             poisson_photon_count=1000.0,
             random_seed=42,
         )
         ds = create_synthetic_dicom_dataset(
             noisy,
-            patient_id="SEC086-BRAIN-01",
-            series_desc="Synthetic Brain CT with Harmonics & Quantum Noise",
+            patient_id="SEC086-PHANTOM-2D",
+            series_desc="Synthetic 2D Brain CT Phantom",
         )
-        st.session_state.hu_slice = noisy
-        st.session_state.clean_slice = clean
+        st.session_state.volume_hu = [noisy]
+        st.session_state.volume_clean = [clean]
+        st.session_state.volume_datasets = [ds]
+        st.session_state.active_slice_idx = 0
         st.session_state.metadata = get_dicom_metadata(ds)
-        st.session_state.raw_dataset = ds
-        st.session_state.loaded_source_name = "Synthetic Brain CT Phantom (Injected Noise)"
-
-
-def load_real_clinical_sample() -> None:
-    """Load sample real Brain CT clinical DICOM slice from data directory."""
-    from pathlib import Path
-    sample_path = Path(__file__).parent / "data" / "sample_real_brain_ct.dcm"
-    if sample_path.exists():
-        ds = load_dicom(str(sample_path))
-        hu = convert_to_hounsfield_units(ds)
-        st.session_state.hu_slice = hu
-        st.session_state.clean_slice = None
-        st.session_state.metadata = get_dicom_metadata(ds)
-        st.session_state.raw_dataset = ds
-        st.session_state.loaded_source_name = "Real Clinical Brain CT (Patient 1CT1, 128×128)"
-        st.session_state.pipeline_results = None
+        st.session_state.metadata["total_slices"] = 1
+        st.session_state.loaded_source_name = "Synthetic Brain CT Phantom (Single Slice)"
+        st.session_state.processed_cache = {}
         st.session_state.preset_choice = "Brain"
         st.session_state.profile_choice_idx = 1
-
-
-def load_highres_spine_sample() -> None:
-    """Load high-resolution 1024×1024 clinical Chest/Spine CT slice with intricate trabecular bone structure."""
-    from pathlib import Path
-    sample_path = Path(__file__).parent / "data" / "sample_highres_spine_ct.dcm"
-    if sample_path.exists():
-        ds = load_dicom(str(sample_path))
-        hu = convert_to_hounsfield_units(ds)
-        st.session_state.hu_slice = hu
-        st.session_state.clean_slice = None
-        st.session_state.metadata = get_dicom_metadata(ds)
-        st.session_state.raw_dataset = ds
-        st.session_state.loaded_source_name = "High-Res Clinical Spine CT (1024×1024)"
-        st.session_state.pipeline_results = None
-        st.session_state.preset_choice = "Bone"
-        st.session_state.profile_choice_idx = 0
 
 
 def main() -> None:
     init_session_state()
 
-    # App Header
-    col_h1, col_h2 = st.columns([3, 1])
-    with col_h1:
-        st.markdown('<div class="main-header">🧠 NeuroClear</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="sub-header">SEC086 — Adaptive Brain CT Image Denoising &amp; Quality Benchmark'
-            ' · 24-Hour Hackathon Prototype</div>',
-            unsafe_allow_html=True,
-        )
-    with col_h2:
-        st.info(
-            "🔬 **Research Prototype**\n\nNon-clinical demo. Classical signal processing & CV only.",
-            icon="⚠️",
-        )
+    # ------------------ TOP WORKSTATION HEADER ------------------
+    st.markdown(
+        """
+        <div class="workstation-header">
+            <div>
+                <div class="brand-title">🧠 NeuroClear <span style="font-size:1.1rem; color:#00E5FF; font-weight:600;">Workstation</span></div>
+                <div class="brand-subtitle">SEC086 · Adaptive Brain CT Denoising Engine &amp; Clinical DICOM Workstation</div>
+            </div>
+            <div style="text-align: right;">
+                <div class="disclaimer-badge">⚠️ Non-Clinical Research Prototype · SEC086</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # ------------------ SIDEBAR CONTROLS ------------------
+    # ------------------ SIDEBAR: STUDY SELECTION & CONTROLS ------------------
     with st.sidebar:
-        st.header("1. Image Source")
+        st.markdown("### 1. Study Selection & Ingestion")
 
-        col_b1, col_b2, col_b3 = st.columns(3)
-        with col_b1:
-            if st.button("🧪 Phantom", use_container_width=True, type="primary"):
-                load_demo_phantom()
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            if st.button("🧪 3D Volume (16s)", use_container_width=True, type="primary"):
+                load_volumetric_brain_phantom()
                 st.rerun()
-        with col_b2:
-            if st.button("🏥 Brain CT", use_container_width=True):
+        with col_s2:
+            if st.button("🏥 Clinical Brain", use_container_width=True):
                 load_real_clinical_sample()
                 st.rerun()
-        with col_b3:
-            if st.button("🦴 Spine CT", use_container_width=True):
+
+        col_s3, col_s4 = st.columns(2)
+        with col_s3:
+            if st.button("🦴 Spine CT (1k)", use_container_width=True):
                 load_highres_spine_sample()
                 st.rerun()
+        with col_s4:
+            if st.button("🔬 2D Phantom", use_container_width=True):
+                load_2d_phantom()
+                st.rerun()
 
-        st.caption("💡 **Tip**: Click **'🦴 Spine CT'** to test the 1024×1024 dataset with crisp trabecular micro-architecture.")
-
-        if st.button("🔄 Reset Image", use_container_width=True):
-            st.session_state.hu_slice = None
-            st.session_state.clean_slice = None
+        if st.button("🔄 Reset Study", use_container_width=True):
+            st.session_state.volume_hu = []
+            st.session_state.volume_clean = []
+            st.session_state.volume_datasets = []
+            st.session_state.active_slice_idx = 0
             st.session_state.metadata = None
-            st.session_state.pipeline_results = None
             st.session_state.loaded_source_name = None
-            st.session_state.raw_dataset = None
+            st.session_state.processed_cache = {}
             st.rerun()
 
-        st.caption("— or upload a CT slice (.dcm, .png, .jpg) —")
-        uploaded_file = st.file_uploader(
-            "Upload CT Slice",
+        st.caption("— or upload single/multi-slice DICOM series —")
+        uploaded_files = st.file_uploader(
+            "Upload DICOM CT (.dcm) or Images",
             type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
-            accept_multiple_files=False,
-            help="Upload a Brain CT DICOM file (.dcm) or standard CT image file (.png, .jpg, .tiff).",
+            accept_multiple_files=True,
+            help="Upload one or multiple .dcm slices. NeuroClear automatically organizes slices in anatomical order.",
         )
 
-        if uploaded_file is not None and st.session_state.loaded_source_name != uploaded_file.name:
-            file_name = uploaded_file.name.lower()
-            try:
-                if file_name.endswith((".dcm", ".dicom")):
-                    ds = load_dicom(uploaded_file)
-                    hu = convert_to_hounsfield_units(ds)
-                    meta = get_dicom_metadata(ds)
-                    raw_ds = ds
-                else:
-                    # Standard image format (PNG, JPG, TIFF)
-                    pil_img = Image.open(uploaded_file).convert("L")
-                    arr_gray = np.array(pil_img, dtype=np.float32)
-                    # Map 8-bit [0, 255] grayscale to clinical CT radiodensity range [-500, 1000 HU]
-                    hu = (arr_gray / 255.0) * 1500.0 - 500.0
-                    raw_ds = create_synthetic_dicom_dataset(
-                        hu,
-                        patient_id=f"IMG_{uploaded_file.name[:12]}",
-                        series_desc="Imported Image CT Slice",
-                    )
-                    meta = get_dicom_metadata(raw_ds)
-                    meta["series_description"] = f"Imported Image ({uploaded_file.name})"
-                    st.session_state.preset_choice = "Bone"
-                    st.session_state.profile_choice_idx = 0
+        if uploaded_files:
+            upload_key = f"UPLOAD_{len(uploaded_files)}_{uploaded_files[0].name}"
+            if st.session_state.loaded_source_name != upload_key:
+                try:
+                    dcm_files = [f for f in uploaded_files if f.name.lower().endswith((".dcm", ".dicom"))]
+                    if dcm_files:
+                        sorted_ds = load_dicom_files_list(dcm_files)
+                        hu_list = [convert_to_hounsfield_units(ds) for ds in sorted_ds]
+                        st.session_state.volume_hu = hu_list
+                        st.session_state.volume_clean = []
+                        st.session_state.volume_datasets = sorted_ds
+                        st.session_state.active_slice_idx = len(hu_list) // 2
+                        st.session_state.metadata = get_dicom_metadata(sorted_ds[0])
+                        st.session_state.metadata["total_slices"] = len(hu_list)
+                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.processed_cache = {}
+                        st.success(f"Loaded {len(hu_list)} DICOM slices successfully.")
+                        st.rerun()
+                    else:
+                        # Image file fallback
+                        img_file = uploaded_files[0]
+                        pil_img = Image.open(img_file).convert("L")
+                        arr_gray = np.array(pil_img, dtype=np.float32)
+                        hu = (arr_gray / 255.0) * 1500.0 - 500.0
+                        raw_ds = create_synthetic_dicom_dataset(
+                            hu,
+                            patient_id=f"IMG_{img_file.name[:12]}",
+                            series_desc=f"Imported Image ({img_file.name})",
+                        )
+                        st.session_state.volume_hu = [hu]
+                        st.session_state.volume_clean = []
+                        st.session_state.volume_datasets = [raw_ds]
+                        st.session_state.active_slice_idx = 0
+                        st.session_state.metadata = get_dicom_metadata(raw_ds)
+                        st.session_state.metadata["total_slices"] = 1
+                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.processed_cache = {}
+                        st.session_state.preset_choice = "Bone"
+                        st.success(f"Loaded image {img_file.name} as calibrated CT slice.")
+                        st.rerun()
+                except Exception as ex:
+                    st.error(f"Error loading uploaded files: {ex}")
 
-                st.session_state.hu_slice = hu
-                st.session_state.clean_slice = None
-                st.session_state.metadata = meta
-                st.session_state.raw_dataset = raw_ds
-                st.session_state.loaded_source_name = uploaded_file.name
-                st.session_state.pipeline_results = None
-                st.success(f"Loaded: {uploaded_file.name} ({hu.shape[0]}×{hu.shape[1]})")
-            except Exception as e:
-                st.error(f"Error loading image: {e}")
-
-        # Simulated Noise Testing Expander
-        with st.expander("⚡ Simulate Low-Dose CT Noise", expanded=False):
-            st.caption("Inject quantum Poisson noise onto the loaded slice to test and observe real-time denoising.")
+        # Simulated Noise Testing
+        with st.expander("⚡ Low-Dose CT Noise Simulator", expanded=False):
+            st.caption("Inject quantum Poisson noise and periodic scanner stripes into active study to test denoising.")
             inject_noise = st.checkbox("Inject Quantum Noise", value=False)
-            noise_sigma = st.slider("Noise Intensity (σ in HU)", min_value=5.0, max_value=60.0, value=25.0, step=5.0, disabled=not inject_noise)
+            noise_sigma = st.slider("Noise Intensity (σ in HU)", 5.0, 60.0, 25.0, 5.0, disabled=not inject_noise)
             inject_periodic = st.checkbox("Inject Scanner Stripe Artifact", value=False, disabled=not inject_noise)
 
         st.divider()
 
-        # Windowing Controls
-        st.header("2. Display Windowing")
+        # ------------------ WINDOWING CONTROLS ------------------
+        st.markdown("### 2. Clinical CT Windowing")
         preset_names = list(WINDOW_PRESETS.keys()) + ["Custom"]
-        preset_default_choice = st.session_state.get("preset_choice", "Brain")
-        preset_index = preset_names.index(preset_default_choice) if preset_default_choice in preset_names else 0
+        preset_default = st.session_state.get("preset_choice", "Brain")
+        p_idx = preset_names.index(preset_default) if preset_default in preset_names else 0
 
-        col_p1, col_p2 = st.columns([3, 2])
-        with col_p1:
+        col_w1, col_w2 = st.columns([3, 2])
+        with col_w1:
             selected_preset = st.selectbox(
                 "Preset",
                 options=preset_names,
-                index=preset_index,
-                help="Clinical window presets for brain and musculoskeletal CT radiodensity inspection.",
+                index=p_idx,
+                help="Standard clinical CT radiodensity window presets.",
             )
-        with col_p2:
+        with col_w2:
             st.write("")
-            if st.button("✨ Auto Window", help="Calculate optimal window center & width from tissue histogram"):
-                if st.session_state.hu_slice is not None:
-                    h_arr = st.session_state.hu_slice
+            if st.button("✨ Auto Window", help="Calculate optimal window from tissue histogram"):
+                if st.session_state.volume_hu:
+                    active_idx = st.session_state.active_slice_idx
+                    h_arr = st.session_state.volume_hu[active_idx]
                     tissue = h_arr[h_arr > -800.0]
                     if len(tissue) > 0:
                         p1 = float(np.percentile(tissue, 2))
@@ -302,61 +426,42 @@ def main() -> None:
         else:
             default_c, default_w = 40.0, 80.0
 
-        window_center = st.slider(
-            "Window Level / Center (HU)",
-            min_value=-500.0,
-            max_value=1000.0,
-            value=float(default_c),
-            step=5.0,
-        )
-        window_width = st.slider(
-            "Window Width (HU)",
-            min_value=10.0,
-            max_value=2500.0,
-            value=float(default_w),
-            step=10.0,
-        )
+        window_center = st.slider("Window Center / Level (HU)", -500.0, 1000.0, float(default_c), 5.0)
+        window_width = st.slider("Window Width (HU)", 10.0, 2500.0, float(default_w), 10.0)
 
         st.divider()
 
-        # Denoising Algorithms Settings
-        st.header("3. Denoising Pipeline")
-
-        st.subheader("Anatomical Target Profile")
+        # ------------------ DENOISING PIPELINE SETTINGS ------------------
+        st.markdown("### 3. NeuroClear Engine Settings")
         profile_options = [
             "🦴 Bone & Micro-Structure (Preserves Trabeculae)",
             "🧠 Brain Soft Tissue (Balanced)",
             "⚡ Heavy Low-Dose Quantum Noise",
             "🛠️ Custom Tuning",
         ]
-        profile_default_idx = st.session_state.get("profile_choice_idx", 1)
-        active_profile = st.selectbox(
-            "Preservation Profile",
-            options=profile_options,
-            index=profile_default_idx,
-            help="Automatically presets filter strength and variance stabilization tailored to target tissue.",
-        )
+        prof_default_idx = st.session_state.get("profile_choice_idx", 1)
+        active_profile = st.selectbox("Tissue Profile", options=profile_options, index=prof_default_idx)
 
         if active_profile == profile_options[0]:  # Bone
             def_periodic = False
             def_strength = 0.70
             def_boost = 1.30
             def_anscombe = False
-            def_method_idx = 0  # NLM
+            def_method_idx = 0
             def_radius = 4.0
         elif active_profile == profile_options[1]:  # Soft Tissue
             def_periodic = True
             def_strength = 0.50
             def_boost = 1.00
             def_anscombe = False
-            def_method_idx = 0  # NLM
+            def_method_idx = 0
             def_radius = 5.0
         elif active_profile == profile_options[2]:  # Heavy Noise
             def_periodic = True
             def_strength = 1.0
             def_boost = 1.10
             def_anscombe = True
-            def_method_idx = 0  # NLM
+            def_method_idx = 0
             def_radius = 6.0
         else:  # Custom
             def_periodic = False
@@ -366,117 +471,87 @@ def main() -> None:
             def_method_idx = 0
             def_radius = 5.0
 
-        st.subheader("Periodic Notch Filter")
-        enable_periodic = st.checkbox(
-            "Enable Periodic Noise Removal",
-            value=def_periodic,
-            help="⚠️ Only enable if your scan exhibits visible scanner rings or stripe artifacts. On normal scans, notch filters may attenuate natural high-frequency bone harmonics.",
-        )
-        notch_type = st.radio(
-            "Notch Filter Profile",
-            options=["gaussian", "butterworth"],
-            index=0,
-            horizontal=True,
-            disabled=not enable_periodic,
-        )
-        notch_radius = st.slider(
-            "Notch Bandwidth Radius (D0)",
-            min_value=1.0,
-            max_value=15.0,
-            value=def_radius,
-            step=0.5,
-            disabled=not enable_periodic,
-        )
-        fft_threshold = st.slider(
-            "Peak Sensitivity (std factor)",
-            min_value=1.5,
-            max_value=4.5,
-            value=2.8,
-            step=0.1,
-            disabled=not enable_periodic,
-            help="Multiplier of standard deviation above median to classify an FFT peak as periodic noise.",
-        )
+        # Stage 1: Periodic Noise Removal
+        with st.expander("Stage 1: Periodic Scanner Notch Filter", expanded=True):
+            enable_periodic = st.checkbox("Enable Periodic Notch Filter", value=def_periodic)
+            notch_type = st.radio("Profile", ["gaussian", "butterworth"], index=0, horizontal=True, disabled=not enable_periodic)
+            notch_radius = st.slider("Notch Bandwidth (D0)", 1.0, 15.0, def_radius, 0.5, disabled=not enable_periodic)
+            fft_threshold = st.slider("Peak Sensitivity (σ factor)", 1.5, 4.5, 2.8, 0.1, disabled=not enable_periodic)
 
-        st.subheader("Poisson Denoising")
-        enable_poisson = st.checkbox("Enable Poisson Denoising", value=True)
-        poisson_method = st.selectbox(
-            "Method",
-            options=["nlm", "bilateral", "tv", "wavelet"],
-            format_func=lambda x: {
-                "nlm": "Non-Local Means (NLM) — Best for Texture",
-                "bilateral": "Bilateral Filter — Sharp Interfaces",
-                "tv": "Total Variation (TV Chambolle)",
-                "wavelet": "Wavelet Thresholding (BayesShrink)",
-            }.get(x, x),
-            index=def_method_idx,
-            disabled=not enable_poisson,
-        )
-        poisson_strength = st.slider(
-            "Denoising Strength",
-            min_value=0.05,
-            max_value=2.0,
-            value=def_strength,
-            step=0.05,
-            disabled=not enable_poisson,
-            help="Lower values (0.2–0.4) preserve fine bone trabeculae and micro-textures. Higher values (>0.8) produce stronger smoothing.",
-        )
-        detail_boost = st.slider(
-            "Classical Detail & Micro-Structure Boost (β)",
-            min_value=1.00,
-            max_value=1.60,
-            value=float(def_boost),
-            step=0.05,
-            disabled=not enable_poisson,
-            help="Mathematical detail preservation via base-detail layer decomposition (I = B + β·D_coring). Enhances authentic trabeculae and micro-edges without generative hallucinations.",
-        )
-        use_anscombe = st.checkbox(
-            "Anscombe Variance Stabilization",
-            value=def_anscombe,
-            disabled=not enable_poisson,
-            help="Recommended for raw photon-limited soft tissue. For high-contrast bone scans, keep UNCHECKED to avoid trabecular compression.",
-        )
+        # Stage 2: Poisson Noise Removal
+        with st.expander("Stage 2: Poisson Edge-Preserving Denoising", expanded=True):
+            enable_poisson = st.checkbox("Enable Poisson Denoising", value=True)
+            poisson_method = st.selectbox(
+                "Algorithm",
+                ["nlm", "bilateral", "tv", "wavelet"],
+                format_func=lambda x: {
+                    "nlm": "Non-Local Means (NLM) — Best Texture",
+                    "bilateral": "Bilateral Filter — Sharp Interfaces",
+                    "tv": "Total Variation (TV Chambolle)",
+                    "wavelet": "Wavelet Thresholding (BayesShrink)",
+                }.get(x, x),
+                index=def_method_idx,
+                disabled=not enable_poisson,
+            )
+            poisson_strength = st.slider("Denoising Strength", 0.05, 2.0, def_strength, 0.05, disabled=not enable_poisson)
+            detail_boost = st.slider("Detail Boost (β)", 1.00, 1.60, float(def_boost), 0.05, disabled=not enable_poisson)
+            use_anscombe = st.checkbox("Anscombe Variance Stabilization", value=def_anscombe, disabled=not enable_poisson)
 
         st.divider()
-        run_btn = st.button("🚀 Run NeuroClear Denoise", type="primary", use_container_width=True)
+        col_run1, col_run2 = st.columns(2)
+        with col_run1:
+            run_btn = st.button("🚀 Denoise Slice", type="primary", use_container_width=True)
+        with col_run2:
+            analyze_btn = st.button("🔬 Analyze Noise", use_container_width=True)
 
-    # ------------------ MAIN CONTENT AREA ------------------
-    if st.session_state.hu_slice is None:
+    # ------------------ MAIN WORKSTATION CANVAS ------------------
+    if not st.session_state.volume_hu:
         st.info(
-            "👋 **Welcome to NeuroClear!**\n\n"
-            "To begin testing the denoising engine, click **'🧪 Load Demo Phantom'** in the left sidebar "
-            "or upload any standard Brain CT DICOM file (`.dcm`).",
+            "👋 **Welcome to the NeuroClear DICOM Workstation!**\n\n"
+            "To begin exploring the medical CT viewer and denoising pipeline:\n"
+            "- Click **'🧪 3D Volume (16s)'** in the sidebar for an instant 16-slice 3D volumetric Brain CT study.\n"
+            "- Or click **'🏥 Clinical Brain'** / **'🦴 Spine CT'** for real patient datasets.\n"
+            "- Or drag & drop your own `.dcm` DICOM slices.",
             icon="💡",
-        )
-        st.markdown(
-            """
-            ### System Capabilities:
-            1. **DICOM Ingestion**: Automatically calibrates raw sensor digital numbers into **Hounsfield Units (HU)** using `RescaleSlope` and `RescaleIntercept`.
-            2. **Frequency-Domain Peak Detection**: Pinpoints harmonic spikes in the 2D Fast Fourier Transform (FFT) spectrum caused by detector grid interference and scanner rings.
-            3. **Targeted Notch Filtering**: Suppresses identified periodic spikes using smooth Gaussian or Butterworth frequency reject filters while preserving core anatomical DC energy.
-            4. **Anscombe-Stabilized Poisson Denoising**: Linearizes photon quantum noise variance and applies state-of-the-art edge-preserving spatial filtering (NLM, Bilateral, or TV Chambolle).
-            5. **Objective Quality Verification**: Reports PSNR, SSIM, and an **Edge Preservation Index** along with residual difference maps to ensure tissue borders remain crisp.
-            """
         )
         return
 
-    raw_hu = st.session_state.hu_slice
-    clean_ref = st.session_state.clean_slice
+    volume_hu = st.session_state.volume_hu
+    volume_clean = st.session_state.volume_clean
+    total_slices = len(volume_hu)
+    active_idx = min(st.session_state.active_slice_idx, total_slices - 1)
 
+    # Active slice data
+    raw_hu = volume_hu[active_idx]
+    clean_ref = volume_clean[active_idx] if (volume_clean and active_idx < len(volume_clean)) else None
+
+    # Handle noise injection if toggled
     if inject_noise:
-        rng = np.random.default_rng(seed=42)
+        rng = np.random.default_rng(seed=42 + active_idx)
         h_s, w_s = raw_hu.shape
-        simulated_noise = rng.normal(0.0, noise_sigma, size=raw_hu.shape).astype(np.float32)
+        sim_noise = rng.normal(0.0, noise_sigma, size=raw_hu.shape).astype(np.float32)
         if inject_periodic:
             fx, fy = 0.12, 0.08
             wave = 35.0 * np.cos(2.0 * np.pi * (fx * np.arange(w_s)[None, :] + fy * np.arange(h_s)[:, None])).astype(np.float32)
-            simulated_noise += wave
-        hu_slice = raw_hu + simulated_noise
+            sim_noise += wave
+        hu_slice = raw_hu + sim_noise
         clean_ref = raw_hu.copy()
     else:
         hu_slice = raw_hu
 
-    # Run pipeline if button clicked or if results are not yet present
-    if run_btn or st.session_state.pipeline_results is None:
+    # Active dataset dataset object & slice location
+    active_ds = st.session_state.volume_datasets[active_idx] if active_idx < len(st.session_state.volume_datasets) else None
+    slice_loc = None
+    if active_ds and hasattr(active_ds, "SliceLocation") and active_ds.SliceLocation is not None:
+        try:
+            slice_loc = float(active_ds.SliceLocation)
+        except Exception:
+            slice_loc = None
+
+    # Process slice pipeline if requested or not yet cached
+    cache_key = f"slice_{active_idx}_{window_center}_{window_width}_{enable_periodic}_{enable_poisson}_{poisson_method}_{poisson_strength}_{detail_boost}_{use_anscombe}_{inject_noise}"
+
+    if run_btn or analyze_btn or (active_idx not in st.session_state.processed_cache):
         pipeline_opts = {
             "skip_periodic": not enable_periodic,
             "skip_poisson": not enable_poisson,
@@ -491,39 +566,34 @@ def main() -> None:
             "window_width": window_width,
             "ground_truth": clean_ref,
         }
-        with st.spinner("Processing slice through NeuroClear pipeline..."):
-            results = run_neuroclear_pipeline(hu_slice, pipeline_opts)
-            st.session_state.pipeline_results = results
+        with st.spinner(f"Processing Slice {active_idx + 1}/{total_slices} through NeuroClear pipeline..."):
+            res = run_neuroclear_pipeline(hu_slice, pipeline_opts)
+            st.session_state.processed_cache[active_idx] = res
 
-    results = st.session_state.pipeline_results
+    results = st.session_state.processed_cache.get(active_idx, {})
 
-    # Active dataset banner
-    source_name = st.session_state.loaded_source_name or "Loaded CT Slice"
-    st.caption(f"📁 Active Source: **{source_name}** · Matrix: `{hu_slice.shape[0]}×{hu_slice.shape[1]}` pixels")
-
-    # Extract pipeline results
+    # Extract pipeline arrays
     denoised_hu = results.get("hu_denoised", hu_slice)
-    display_orig = results.get("display_original", apply_window(hu_slice, window_center, window_width, as_uint8=True))
-    display_denoised = results.get("display_denoised", apply_window(denoised_hu, window_center, window_width, as_uint8=True))
+    display_orig = apply_window(hu_slice, window_center, window_width, as_uint8=True)
+    display_denoised = apply_window(denoised_hu, window_center, window_width, as_uint8=True)
     diff_array = results.get("difference_map", hu_slice - denoised_hu)
     notch_mask = results.get("notch_mask", None)
     initial_noise = results.get("initial_noise", {})
     periodic_analysis = initial_noise.get("periodic", {})
-    poisson_est = initial_noise.get("poisson", {})
-
-    # Render Quality KPI Metric Cards
+    poisson_est = results.get("poisson_estimation", initial_noise.get("poisson", {}))
     metrics = results.get("metrics", {})
     gt_metrics = results.get("ground_truth_metrics", None)
 
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    # ------------------ TOP METRIC KPI BAR ------------------
+    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
     with kpi1:
         if gt_metrics:
             p_val = gt_metrics.get("output_psnr_db", 0.0)
             p_diff = gt_metrics.get("psnr_improvement_db", 0.0)
-            st.metric("PSNR (vs Clean Reference)", f"{p_val:.2f} dB", f"{p_diff:+.2f} dB")
+            st.metric("PSNR (vs Clean GT)", f"{p_val:.2f} dB", f"{p_diff:+.2f} dB")
         else:
             psnr_val = metrics.get("psnr_db", 0.0)
-            st.metric("PSNR (Fidelity)", f"{psnr_val:.2f} dB", help="Fidelity between input and denoised output.")
+            st.metric("PSNR (Fidelity)", f"{psnr_val:.2f} dB", help="Fidelity between input and denoised CT slice.")
 
     with kpi2:
         if gt_metrics:
@@ -532,61 +602,70 @@ def main() -> None:
             st.metric("SSIM (Structure)", f"{s_val:.4f}", f"{s_diff:+.4f}")
         else:
             ssim_val = metrics.get("ssim", 0.0)
-            st.metric("SSIM (Structure)", f"{ssim_val:.4f}", help="Structural similarity between input and output.")
+            st.metric("SSIM (Structure)", f"{ssim_val:.4f}", help="Structural similarity index.")
 
     with kpi3:
         epi_val = metrics.get("edge_preservation", 0.0)
         st.metric(
-            "Edge Preservation Index",
+            "Edge Preservation (EPI)",
             f"{epi_val:.3f}",
             "Preserved" if epi_val >= 0.75 else "Softened",
-            help="Pearson correlation of Sobel gradient magnitudes along anatomical edges (ideal = 1.0).",
+            help="Pearson correlation of Sobel gradients along anatomical edges (ideal = 1.0).",
         )
 
     with kpi4:
         peaks_found = periodic_analysis.get("peak_count", 0)
-        power_removed = metrics.get("noise_power_removed", 0.0)
+        power_rem = metrics.get("noise_power_removed", 0.0)
         st.metric(
-            "Periodic Peaks Notched",
+            "Periodic Notches",
             f"{peaks_found} peaks",
-            f"Δσ² = {power_removed:.1f}",
-            help="Number of conjugate harmonic peak frequencies suppressed by notch filtering.",
+            f"Δσ² = {power_rem:.1f}",
+            help="Number of harmonic periodic frequency spikes suppressed by notch filter.",
+        )
+
+    with kpi5:
+        sigma_est = poisson_est.get("estimated_sigma", 0.0) if poisson_est else 0.0
+        st.metric(
+            "Quantum Noise σ",
+            f"{sigma_est:.1f} HU",
+            f"SNR: {poisson_est.get('snr_db', 0.0):.1f} dB" if poisson_est else "N/A",
+            help="Estimated photon quantum noise standard deviation.",
         )
 
     st.markdown("---")
 
-    # ------------------ WORKSPACE TABS ------------------
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "👁️ Before vs After CT View",
+    # ------------------ SLICE NAVIGATION BAR ------------------
+    active_idx = render_slice_navigation_bar(
+        current_index=active_idx,
+        total_slices=total_slices,
+        slice_location_mm=slice_loc,
+        key_prefix="main_nav",
+    )
+
+    # ------------------ WORKSTATION TABS ------------------
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "👁️ Medical CT Viewer",
         "🌐 Frequency Spectrum (FFT)",
         "🔬 Difference & Residual Map",
+        "🔍 Pixel & HU Inspector",
         "📋 DICOM Metadata & Physics",
+        "💾 Medical Export",
     ])
 
     with tab1:
-        notch_label = " + Notch" if enable_periodic else ""
+        notch_badge = " + Notch" if enable_periodic else ""
         render_ct_viewer(
             original_display=display_orig,
             denoised_display=display_denoised,
             hu_original=hu_slice,
             hu_denoised=denoised_hu,
-            title_left="Original / Noisy CT Slice",
-            title_right=f"NeuroClear Output ({poisson_method.upper()}{notch_label})",
+            window_center=window_center,
+            window_width=window_width,
+            slice_index=active_idx,
+            total_slices=total_slices,
+            title_left="Original CT Slice",
+            title_right=f"NeuroClear Output ({poisson_method.upper()}{notch_badge})",
         )
-
-        st.markdown("#### 🔍 Interactive HU Pixel Inspector")
-        inspect_target = st.radio(
-            "Inspect Array:",
-            options=["Denoised Output", "Original Input", "Clean Reference" if clean_ref is not None else None],
-            horizontal=True,
-            index=0,
-        )
-        if inspect_target == "Denoised Output":
-            render_interactive_hu_inspector(denoised_hu, title="Interactive Denoised CT HU Inspector")
-        elif inspect_target == "Original Input":
-            render_interactive_hu_inspector(hu_slice, title="Interactive Original CT HU Inspector")
-        elif inspect_target == "Clean Reference" and clean_ref is not None:
-            render_interactive_hu_inspector(clean_ref, title="Interactive Clean Reference HU Inspector")
 
     with tab2:
         render_fft_view(
@@ -595,14 +674,13 @@ def main() -> None:
             notch_mask=notch_mask,
         )
 
-        # Peak Table
-        detected_peaks = periodic_analysis.get("peaks", [])
-        if detected_peaks:
+        peaks = periodic_analysis.get("peaks", [])
+        if peaks:
             st.markdown("##### 📍 Detected Harmonic Artifact Coordinates")
             table_data = []
-            for idx, p in enumerate(detected_peaks, start=1):
+            for p_num, p in enumerate(peaks, start=1):
                 table_data.append({
-                    "Peak #": idx,
+                    "Harmonic #": p_num,
                     "Frequency (u, v)": f"({p['u']}, {p['v']})",
                     "Conjugate (-u, -v)": f"({-p['u']}, {-p['v']})",
                     "Radial Freq": f"{p['freq_normalized']:.3f}",
@@ -614,99 +692,130 @@ def main() -> None:
             st.success("No anomalous periodic frequency peaks detected in this slice.")
 
     with tab3:
-        diff_array = hu_slice - denoised_hu
         render_difference_map(
             original_image=hu_slice,
             processed_image=denoised_hu,
             difference_array=diff_array,
         )
 
-        st.markdown("#### 📈 Poisson Noise Level Analysis")
-        poisson_est = results.get("poisson_estimation", {})
-        if poisson_est:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Estimated Noise Sigma (σ)", f"{poisson_est.get('estimated_sigma', 0.0):.2f} HU")
-            c2.metric("Estimated Tissue SNR", f"{poisson_est.get('snr_db', 0.0):.1f} dB")
-            c3.metric("Evaluated Noise Classification", poisson_est.get("noise_level", "Normal").upper())
-
     with tab4:
-        st.markdown("#### 📑 DICOM Header Tags & Calibration")
+        st.markdown("#### 🔍 Interactive CT Pixel & Hounsfield Unit Inspector")
+        target_choice = st.radio(
+            "Target Array for Inspection:",
+            ["NeuroClear Denoised Output", "Original Input Slice", "Clean Reference" if clean_ref is not None else None],
+            horizontal=True,
+            index=0,
+        )
+        pixel_spacing = st.session_state.metadata.get("pixel_spacing", (1.0, 1.0)) if st.session_state.metadata else (1.0, 1.0)
+        if target_choice == "NeuroClear Denoised Output":
+            render_interactive_hu_inspector(denoised_hu, title="Interactive Denoised CT HU Inspector", pixel_spacing_mm=pixel_spacing)
+        elif target_choice == "Original Input Slice":
+            render_interactive_hu_inspector(hu_slice, title="Interactive Original CT HU Inspector", pixel_spacing_mm=pixel_spacing)
+        elif target_choice == "Clean Reference" and clean_ref is not None:
+            render_interactive_hu_inspector(clean_ref, title="Interactive Clean Reference HU Inspector", pixel_spacing_mm=pixel_spacing)
+
+    with tab5:
+        st.markdown("#### 📑 Technical DICOM Metadata")
         meta = st.session_state.metadata or {}
-        if meta:
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                st.markdown(
-                    f"• **Patient Name**: `{meta.get('patient_name', 'De-identified')}`<br>"
-                    f"• **Patient ID**: `{meta.get('patient_id', 'N/A')}`<br>"
-                    f"• **Modality**: `{meta.get('modality', 'CT')}`<br>"
-                    f"• **Series Description**: `{meta.get('series_description', 'N/A')}`<br>"
-                    f"• **Matrix Dimensions**: `{meta.get('rows', hu_slice.shape[0])} × {meta.get('columns', hu_slice.shape[1])}`",
-                    unsafe_allow_html=True,
-                )
-            with col_m2:
-                st.markdown(
-                    f"• **Rescale Slope**: `{meta.get('rescale_slope', 1.0)}`<br>"
-                    f"• **Rescale Intercept**: `{meta.get('rescale_intercept', 0.0)} HU`<br>"
-                    f"• **Pixel Spacing**: `{meta.get('pixel_spacing', '1.0 x 1.0 mm')}`<br>"
-                    f"• **Slice Thickness**: `{meta.get('slice_thickness', 'N/A')} mm`<br>"
-                    f"• **Photometric Interpretation**: `{meta.get('photometric_interpretation', 'MONOCHROME2')}`",
-                    unsafe_allow_html=True,
-                )
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.markdown(
+                f"• **Patient Name / ID**: `{meta.get('patient_id', 'De-identified')}`<br>"
+                f"• **Modality**: `{meta.get('modality', 'CT')}`<br>"
+                f"• **Study Date**: `{meta.get('study_date', 'Unknown')}`<br>"
+                f"• **Series Description**: `{meta.get('series_description', 'Brain CT')}`<br>"
+                f"• **Total Slices**: `{total_slices}` (Viewing #{active_idx + 1})<br>"
+                f"• **Matrix Dimensions**: `{hu_slice.shape[0]} × {hu_slice.shape[1]}` pixels",
+                unsafe_allow_html=True,
+            )
+        with col_m2:
+            st.markdown(
+                f"• **Rescale Slope**: `{meta.get('rescale_slope', 1.0)}`<br>"
+                f"• **Rescale Intercept**: `{meta.get('rescale_intercept', 0.0)} HU`<br>"
+                f"• **Pixel Spacing**: `{meta.get('pixel_spacing', '1.0 x 1.0 mm')}`<br>"
+                f"• **Slice Thickness**: `{meta.get('slice_thickness', 1.0)} mm`<br>"
+                f"• **Photometric Interpretation**: `{meta.get('photometric_interpretation', 'MONOCHROME2')}`",
+                unsafe_allow_html=True,
+            )
 
         st.markdown("---")
         st.markdown(
             """
-            #### 🔬 Signal Processing Architecture:
-            * **Hounsfield Unit Calibration**: $HU = (\\text{StoredPixel} \\times \\text{RescaleSlope}) + \\text{RescaleIntercept}$.
-            * **Anscombe Transformation**: For quantum photon counting noise, $f(x) = 2 \\sqrt{x + \\frac{3}{8}}$ stabilizes signal-dependent Poisson variance into additive unit Gaussian variance.
-            * **Adaptive Notch Filter**: Suppresses detected harmonic frequency spikes $H(u,v) = \\prod_k \\left(1 - e^{-\\frac{D_k^2}{2 D_0^2}}\\right)$.
-            * **Structural Metric (EPI)**: Evaluates edge correlation $\\rho_{\\nabla} = \\frac{\\sum (\\nabla I_{ref} - \\bar{\\nabla}_{ref})(\\nabla I_{proc} - \\bar{\\nabla}_{proc})}{\\sigma_{\\nabla ref} \\sigma_{\\nabla proc}}$ along Sobel gradient contours.
+            #### 🔬 Signal Processing & Physics Architecture:
+            * **Hounsfield Unit Calibration**: $HU = (\\text{Pixel} \\times \\text{RescaleSlope}) + \\text{RescaleIntercept}$.
+            * **Anscombe Transformation**: $f(x) = 2\\sqrt{x + \\frac{3}{8}}$ stabilizes Poisson quantum noise variance into additive unit Gaussian variance.
+            * **Adaptive Notch Filter**: Suppresses harmonic frequency spikes $H(u,v) = \\prod_k \\left(1 - e^{-\\frac{D_k^2}{2 D_0^2}}\\right)$.
+            * **Edge Preservation Index (EPI)**: Evaluates Sobel gradient correlation $\\rho_{\\nabla} = \\frac{\\sum (\\nabla I_{ref} - \\bar{\\nabla}_{ref})(\\nabla I_{proc} - \\bar{\\nabla}_{proc})}{\\sigma_{\\nabla ref} \\sigma_{\\nabla proc}}$ to guarantee crisp anatomical boundaries.
             """
         )
 
-        st.divider()
-        st.markdown("#### 💾 Export Denoised CT Data")
-        exp_col1, exp_col2 = st.columns(2)
+    with tab6:
+        st.markdown("#### 💾 Export Processed Results")
+        exp1, exp2, exp3 = st.columns(3)
 
-        with exp_col1:
-            # Export PNG (display windowed)
+        with exp1:
             img_pil = Image.fromarray(display_denoised)
             buf_png = BytesIO()
             img_pil.save(buf_png, format="PNG")
             st.download_button(
-                label="📥 Download Denoised Slice (PNG)",
+                label="📥 Download Slice (PNG)",
                 data=buf_png.getvalue(),
-                file_name="neuroclear_denoised_slice.png",
+                file_name=f"neuroclear_slice_{active_idx + 1}.png",
                 mime="image/png",
                 use_container_width=True,
             )
 
-        with exp_col2:
-            # Export DICOM dataset
-            raw_ds = st.session_state.raw_dataset
-            if raw_ds is not None:
+        with exp2:
+            if active_ds is not None:
                 try:
-                    slope = float(getattr(raw_ds, "RescaleSlope", 1.0))
-                    intercept = float(getattr(raw_ds, "RescaleIntercept", 0.0))
+                    slope = float(getattr(active_ds, "RescaleSlope", 1.0))
+                    intercept = float(getattr(active_ds, "RescaleIntercept", 0.0))
                     raw_stored = np.round((denoised_hu - intercept) / slope).astype(np.int16)
 
-                    out_ds = pydicom.Dataset(raw_ds)
+                    out_ds = pydicom.Dataset(active_ds)
                     out_ds.PixelData = raw_stored.tobytes()
                     out_ds.SeriesDescription = "NeuroClear SEC086 Denoised"
                     buf_dcm = BytesIO()
                     pydicom.dcmwrite(buf_dcm, out_ds)
                     st.download_button(
-                        label="📥 Download Calibrated DICOM (.dcm)",
+                        label="📥 Download DICOM (.dcm)",
                         data=buf_dcm.getvalue(),
-                        file_name="neuroclear_denoised.dcm",
+                        file_name=f"neuroclear_slice_{active_idx + 1}.dcm",
                         mime="application/dicom",
                         use_container_width=True,
                     )
                 except Exception as ex:
-                    st.caption(f"DICOM export formatting notice: {ex}")
+                    st.caption(f"DICOM formatting notice: {ex}")
+
+        with exp3:
+            report_data = {
+                "neuroclear_version": "SEC086-Workstation",
+                "slice_index": active_idx + 1,
+                "total_slices": total_slices,
+                "metrics": {
+                    "psnr_db": float(metrics.get("psnr_db", 0.0)),
+                    "ssim": float(metrics.get("ssim", 0.0)),
+                    "edge_preservation_index": float(metrics.get("edge_preservation", 0.0)),
+                    "noise_power_removed": float(metrics.get("noise_power_removed", 0.0)),
+                },
+                "parameters_applied": {
+                    "periodic_notch_enabled": enable_periodic,
+                    "poisson_denoising_enabled": enable_poisson,
+                    "poisson_method": poisson_method,
+                    "window_center": window_center,
+                    "window_width": window_width,
+                },
+            }
+            st.download_button(
+                label="📊 Download Metrics Report (JSON)",
+                data=json.dumps(report_data, indent=2),
+                file_name=f"neuroclear_report_slice_{active_idx + 1}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
     st.markdown("---")
-    st.caption("NeuroClear · SEC086 Hackathon Build · 100% Local Processing · No Cloud / No DB / Non-Clinical")
+    st.caption("NeuroClear Medical DICOM Workstation · SEC086 · 100% Local Signal Processing · Non-Clinical Research Prototype")
 
 
 if __name__ == "__main__":
