@@ -256,6 +256,13 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Error loading image: {e}")
 
+        # Simulated Noise Testing Expander
+        with st.expander("⚡ Simulate Low-Dose CT Noise", expanded=False):
+            st.caption("Inject quantum Poisson noise onto the loaded slice to test and observe real-time denoising.")
+            inject_noise = st.checkbox("Inject Quantum Noise", value=False)
+            noise_sigma = st.slider("Noise Intensity (σ in HU)", min_value=5.0, max_value=60.0, value=25.0, step=5.0, disabled=not inject_noise)
+            inject_periodic = st.checkbox("Inject Scanner Stripe Artifact", value=False, disabled=not inject_noise)
+
         st.divider()
 
         # Windowing Controls
@@ -332,8 +339,8 @@ def main() -> None:
 
         if active_profile == profile_options[0]:  # Bone
             def_periodic = False
-            def_strength = 0.30
-            def_boost = 1.25
+            def_strength = 0.70
+            def_boost = 1.30
             def_anscombe = False
             def_method_idx = 0  # NLM
             def_radius = 4.0
@@ -452,8 +459,21 @@ def main() -> None:
         )
         return
 
-    hu_slice = st.session_state.hu_slice
+    raw_hu = st.session_state.hu_slice
     clean_ref = st.session_state.clean_slice
+
+    if inject_noise:
+        rng = np.random.default_rng(seed=42)
+        h_s, w_s = raw_hu.shape
+        simulated_noise = rng.normal(0.0, noise_sigma, size=raw_hu.shape).astype(np.float32)
+        if inject_periodic:
+            fx, fy = 0.12, 0.08
+            wave = 35.0 * np.cos(2.0 * np.pi * (fx * np.arange(w_s)[None, :] + fy * np.arange(h_s)[:, None])).astype(np.float32)
+            simulated_noise += wave
+        hu_slice = raw_hu + simulated_noise
+        clean_ref = raw_hu.copy()
+    else:
+        hu_slice = raw_hu
 
     # Run pipeline if button clicked or if results are not yet present
     if run_btn or st.session_state.pipeline_results is None:
