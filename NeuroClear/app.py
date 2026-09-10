@@ -218,21 +218,63 @@ def load_volumetric_brain_phantom() -> None:
 
 
 def load_real_clinical_sample() -> None:
-    """Load sample real Brain CT clinical DICOM slice from data directory."""
-    sample_path = Path(__file__).parent / "data" / "sample_real_brain_ct.dcm"
-    if sample_path.exists():
-        ds = load_dicom(str(sample_path))
-        hu = convert_to_hounsfield_units(ds)
-        st.session_state.volume_hu = [hu]
+    """Load sample authentic Brain CT clinical multi-slice series from data/clinical_samples."""
+    samples_dir = Path(__file__).parent / "data" / "clinical_samples"
+    img_files = sorted(list(samples_dir.glob("clinical_slice_*.png")))
+
+    if img_files:
+        hu_list = []
+        datasets = []
+        for idx, fpath in enumerate(img_files):
+            pil_img = Image.open(fpath).convert("L")
+            pil_img = pil_img.resize((512, 512), Image.Resampling.BICUBIC)
+            arr = np.array(pil_img, dtype=np.float32)
+            norm = arr / 255.0
+            # Calibrate to realistic CT Hounsfield Units (-1000 HU air to +1000 HU skull bone)
+            hu = np.where(
+                norm < 0.05,
+                -1000.0,
+                np.where(
+                    norm > 0.82,
+                    400.0 + ((norm - 0.82) / 0.18) * 800.0,
+                    ((norm - 0.05) / 0.77) * 70.0 - 5.0,
+                ),
+            )
+            ds = create_synthetic_dicom_dataset(
+                hu,
+                patient_id="CLINICAL_HEAD_CQ500",
+                series_desc="Axial Non-Contrast Head CT (Clinical Multi-Slice)",
+            )
+            ds.InstanceNumber = idx + 1
+            ds.SliceLocation = float(idx * 10.0)
+            hu_list.append(hu.astype(np.float32))
+            datasets.append(ds)
+
+        st.session_state.volume_hu = hu_list
         st.session_state.volume_clean = []
-        st.session_state.volume_datasets = [ds]
+        st.session_state.volume_datasets = datasets
         st.session_state.active_slice_idx = 0
-        st.session_state.metadata = get_dicom_metadata(ds)
-        st.session_state.metadata["total_slices"] = 1
-        st.session_state.loaded_source_name = "Clinical Brain CT (Patient 1CT1, 128×128)"
+        st.session_state.metadata = get_dicom_metadata(datasets[0])
+        st.session_state.metadata["total_slices"] = len(hu_list)
+        st.session_state.loaded_source_name = "Authentic Clinical Brain CT (4-Slice Series)"
         st.session_state.processed_cache = {}
         st.session_state.preset_choice = "Brain"
         st.session_state.profile_choice_idx = 1
+    else:
+        sample_path = Path(__file__).parent / "data" / "sample_real_brain_ct.dcm"
+        if sample_path.exists():
+            ds = load_dicom(str(sample_path))
+            hu = convert_to_hounsfield_units(ds)
+            st.session_state.volume_hu = [hu]
+            st.session_state.volume_clean = []
+            st.session_state.volume_datasets = [ds]
+            st.session_state.active_slice_idx = 0
+            st.session_state.metadata = get_dicom_metadata(ds)
+            st.session_state.metadata["total_slices"] = 1
+            st.session_state.loaded_source_name = "Clinical Brain CT (Patient 1CT1)"
+            st.session_state.processed_cache = {}
+            st.session_state.preset_choice = "Brain"
+            st.session_state.profile_choice_idx = 1
 
 
 def load_highres_spine_sample() -> None:

@@ -147,16 +147,23 @@ def denoise_poisson(
             patch_distance=5,
         )
 
-    # Classical Multi-Scale Detail Preservation & Adaptive Edge Boost
+    # Classical Multi-Scale Detail Preservation & Natural Texture Retention
     detail_boost = max(1.0, float(p.get("detail_boost", 1.0)))
+    texture_blend = float(np.clip(p.get("texture_blend", 0.10), 0.0, 0.35))
+
+    # Extract high-frequency micro-texture residual layer
+    texture_residual = filter_input - denoised_norm
+
     if detail_boost > 1.001:
-        # Extract classical high-frequency detail layer D = Input - Base
-        detail = filter_input - denoised_norm
-        # Apply soft coring threshold to extinguish quantum noise fluctuations
+        # Apply soft coring threshold to isolate anatomical edges from random photon spikes
         coring_tau = float(np.clip(0.012 * strength, 0.003, 0.05))
-        detail_clean = np.sign(detail) * np.maximum(0.0, np.abs(detail) - coring_tau)
-        # Boost true anatomical micro-structures (trabeculae, cortices)
+        detail_clean = np.sign(texture_residual) * np.maximum(0.0, np.abs(texture_residual) - coring_tau)
+        # Boost true anatomical micro-structures (sulci, gyri, trabeculae, cortices)
         denoised_norm = np.clip(denoised_norm + (detail_boost - 1.0) * detail_clean, 0.0, 1.0)
+
+    # Blend subtle natural texture to preserve realistic clinical CT parenchyma appearance (prevents plastic/waxy artifact)
+    if texture_blend > 0.001:
+        denoised_norm = np.clip(denoised_norm + (texture_blend * texture_residual), 0.0, 1.0)
 
     # Invert Anscombe transform if applied
     if use_anscombe:
