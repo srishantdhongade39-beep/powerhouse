@@ -265,8 +265,51 @@ def main() -> None:
         # Denoising Algorithms Settings
         st.header("3. Denoising Pipeline")
 
+        st.subheader("Anatomical Target Profile")
+        profile_options = [
+            "🦴 Bone & Micro-Structure (Preserves Trabeculae)",
+            "🧠 Brain Soft Tissue (Balanced)",
+            "⚡ Heavy Low-Dose Quantum Noise",
+            "🛠️ Custom Tuning",
+        ]
+        active_profile = st.selectbox(
+            "Preservation Profile",
+            options=profile_options,
+            index=1,
+            help="Automatically presets filter strength and variance stabilization tailored to target tissue.",
+        )
+
+        if active_profile == profile_options[0]:  # Bone
+            def_periodic = False
+            def_strength = 0.25
+            def_anscombe = False
+            def_method_idx = 0  # NLM
+            def_radius = 4.0
+        elif active_profile == profile_options[1]:  # Soft Tissue
+            def_periodic = True
+            def_strength = 0.50
+            def_anscombe = False
+            def_method_idx = 0  # NLM
+            def_radius = 5.0
+        elif active_profile == profile_options[2]:  # Heavy Noise
+            def_periodic = True
+            def_strength = 1.0
+            def_anscombe = True
+            def_method_idx = 0  # NLM
+            def_radius = 6.0
+        else:  # Custom
+            def_periodic = False
+            def_strength = 0.40
+            def_anscombe = False
+            def_method_idx = 0
+            def_radius = 5.0
+
         st.subheader("Periodic Notch Filter")
-        enable_periodic = st.checkbox("Enable Periodic Noise Removal", value=True)
+        enable_periodic = st.checkbox(
+            "Enable Periodic Noise Removal",
+            value=def_periodic,
+            help="⚠️ Only enable if your scan exhibits visible scanner rings or stripe artifacts. On normal scans, notch filters may attenuate natural high-frequency bone harmonics.",
+        )
         notch_type = st.radio(
             "Notch Filter Profile",
             options=["gaussian", "butterworth"],
@@ -278,7 +321,7 @@ def main() -> None:
             "Notch Bandwidth Radius (D0)",
             min_value=1.0,
             max_value=15.0,
-            value=5.0,
+            value=def_radius,
             step=0.5,
             disabled=not enable_periodic,
         )
@@ -286,7 +329,7 @@ def main() -> None:
             "Peak Sensitivity (std factor)",
             min_value=1.5,
             max_value=4.5,
-            value=2.5,
+            value=2.8,
             step=0.1,
             disabled=not enable_periodic,
             help="Multiplier of standard deviation above median to classify an FFT peak as periodic noise.",
@@ -298,27 +341,28 @@ def main() -> None:
             "Method",
             options=["nlm", "bilateral", "tv", "wavelet"],
             format_func=lambda x: {
-                "nlm": "Non-Local Means (NLM)",
-                "bilateral": "Bilateral Filter",
+                "nlm": "Non-Local Means (NLM) — Best for Texture",
+                "bilateral": "Bilateral Filter — Sharp Interfaces",
                 "tv": "Total Variation (TV Chambolle)",
                 "wavelet": "Wavelet Thresholding (BayesShrink)",
             }.get(x, x),
-            index=0,
+            index=def_method_idx,
             disabled=not enable_poisson,
         )
         poisson_strength = st.slider(
             "Denoising Strength",
-            min_value=0.1,
-            max_value=3.0,
-            value=1.0,
-            step=0.1,
+            min_value=0.05,
+            max_value=2.0,
+            value=def_strength,
+            step=0.05,
             disabled=not enable_poisson,
+            help="Lower values (0.2–0.4) preserve fine bone trabeculae and micro-textures. Higher values (>0.8) produce stronger smoothing.",
         )
         use_anscombe = st.checkbox(
             "Anscombe Variance Stabilization",
-            value=True,
+            value=def_anscombe,
             disabled=not enable_poisson,
-            help="Transforms Poisson signal-dependent variance into approximately unit Gaussian noise before filtering.",
+            help="Recommended for raw photon-limited soft tissue. For high-contrast bone scans, keep UNCHECKED to avoid trabecular compression.",
         )
 
         st.divider()

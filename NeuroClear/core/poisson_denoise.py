@@ -83,12 +83,11 @@ def denoise_poisson(
     # Dispatch to edge-preserving filter
     if method == "bilateral":
         # OpenCV bilateralFilter expects float32 or uint8
-        # d: diameter of pixel neighborhood (e.g. 7 or 9)
-        # sigmaColor: filter sigma in color space
-        # sigmaSpace: filter sigma in coordinate space
-        d = int(np.clip(5 + 2 * int(strength * 2), 5, 15))
-        sigma_color = float(np.clip(0.08 * strength, 0.02, 0.4))
-        sigma_space = float(np.clip(3.0 * strength, 1.0, 12.0))
+        # d: diameter of pixel neighborhood
+        # Calibrated to preserve fine bone trabeculae and sharp interfaces
+        d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
+        sigma_color = float(np.clip(0.035 * strength, 0.008, 0.18))
+        sigma_space = float(np.clip(2.0 * strength, 1.0, 7.0))
         denoised_norm = cv2.bilateralFilter(
             filter_input,
             d=d,
@@ -99,8 +98,8 @@ def denoise_poisson(
 
     elif method == "tv":
         # Total Variation Chambolle denoising
-        # weight: greater weight = more denoising
-        tv_weight = float(np.clip(0.05 * strength, 0.005, 0.3))
+        # Reduced weight to eliminate staircasing / plastic appearance
+        tv_weight = float(np.clip(0.018 * strength, 0.002, 0.12))
         denoised_norm = denoise_tv_chambolle(
             filter_input,
             weight=tv_weight,
@@ -119,9 +118,9 @@ def denoise_poisson(
             )
         except (ImportError, ModuleNotFoundError):
             # Fallback to edge-preserving bilateral filter when PyWavelets is not installed
-            d = int(np.clip(5 + 2 * int(strength * 2), 5, 15))
-            sigma_color = float(np.clip(0.08 * strength, 0.02, 0.4))
-            sigma_space = float(np.clip(3.0 * strength, 1.0, 12.0))
+            d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
+            sigma_color = float(np.clip(0.035 * strength, 0.008, 0.18))
+            sigma_space = float(np.clip(2.0 * strength, 1.0, 7.0))
             denoised_norm = cv2.bilateralFilter(
                 filter_input,
                 d=d,
@@ -132,19 +131,20 @@ def denoise_poisson(
 
     else:
         # Default: Non-Local Means (NLM)
-        # Renowned for state-of-the-art CT texture and edge retention
+        # Calibrated for high-fidelity CT texture and trabecular bone retention
         try:
             sigma_est = float(np.mean(estimate_sigma(filter_input)))
         except Exception:
-            sigma_est = 0.03
+            sigma_est = 0.02
 
-        h_param = max(0.01, 1.15 * strength * max(sigma_est, 0.02))
+        # h parameter: 0.60 * sigma preserves fine architectural textures
+        h_param = max(0.005, 0.60 * strength * max(sigma_est, 0.012))
         denoised_norm = denoise_nl_means(
             filter_input,
             h=h_param,
             fast_mode=True,
-            patch_size=5,
-            patch_distance=7,
+            patch_size=3,
+            patch_distance=5,
         )
 
     # Invert Anscombe transform if applied
