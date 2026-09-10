@@ -760,11 +760,14 @@ def main() -> None:
                 )
                 st.divider()
                 st.markdown("##### 🔌 MATLAB Engine Link")
-                from core.matlab_bridge import is_matlab_available
-                matlab_ok, matlab_msg = is_matlab_available()
-                if matlab_ok:
-                    st.success("🟢 MATLAB Engine: Ready")
-                else:
+                try:
+                    from core.matlab_bridge import is_matlab_available
+                    matlab_ok, _ = is_matlab_available()
+                    if matlab_ok:
+                        st.success("🟢 MATLAB Engine: Ready")
+                    else:
+                        st.caption("ℹ️ Native Perona-Malik PDE active. Run `pip install matlabengine` if linking live `.m` scripts.")
+                except Exception:
                     st.caption("ℹ️ Native Perona-Malik PDE active. Run `pip install matlabengine` if linking live `.m` scripts.")
 
     # ------------------ SLICE & PIPELINE STATE RESOLUTION ------------------
