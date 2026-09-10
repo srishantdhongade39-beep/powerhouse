@@ -503,15 +503,15 @@ def main() -> None:
             def_radius = 4.0
         elif active_profile == profile_options[1]:  # Soft Tissue
             def_periodic = True
-            def_strength = 0.50
-            def_boost = 1.00
+            def_strength = 1.00
+            def_boost = 1.05
             def_anscombe = False
             def_method_idx = 0
             def_radius = 5.0
         elif active_profile == profile_options[2]:  # Heavy Noise
             def_periodic = True
-            def_strength = 1.0
-            def_boost = 1.10
+            def_strength = 1.35
+            def_boost = 1.15
             def_anscombe = True
             def_method_idx = 0
             def_radius = 6.0
