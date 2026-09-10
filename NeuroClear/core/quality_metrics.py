@@ -138,7 +138,7 @@ def calculate_edge_preservation(
     denom = np.sqrt(np.sum((g1 - g1_mean) ** 2) * np.sum((g2 - g2_mean) ** 2))
 
     if denom < 1e-12:
-        return 1.0
+        return 1.0 if np.allclose(grad_ref, grad_proc, atol=1e-3) else 0.0
 
     corr = float(numerator / denom)
     return float(np.clip(corr, 0.0, 1.0))

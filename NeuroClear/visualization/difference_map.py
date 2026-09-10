@@ -38,7 +38,14 @@ def render_difference_map(
     col1, col2 = st.columns([1.2, 0.8])
 
     with col1:
-        st.markdown("##### 🔬 Removed Noise & Artifact Residual Map (Original − Denoised)")
+        st.markdown("##### 🔬 REMOVED SIGNAL / DIFFERENCE MAP (Original − Denoised)")
+
+        # Mandatory IEC 62366-1 Usability & Safety Advisory Disclaimer
+        st.info(
+            "ℹ️ **Safety Advisory:** This map shows intensity differences between the original and "
+            "processed image. Differences may include both noise reduction and legitimate image changes; "
+            "this visualization is not a diagnostic indicator."
+        )
 
         # Symmetrical diverging scale centered at 0
         v_abs = float(np.percentile(np.abs(diff), 99.5))
@@ -55,16 +62,15 @@ def render_difference_map(
             template="plotly_dark",
             paper_bgcolor="#0A0E17",
             plot_bgcolor="#0A0E17",
-            height=460,
+            height=430,
             margin=dict(l=10, r=10, t=30, b=10),
             coloraxis_colorbar=dict(title="HU Residual"),
         )
         st.plotly_chart(fig_diff, use_container_width=True)
 
         st.caption(
-            "💡 **Clinical Verification Tip**: A high-quality denoising result will show "
-            "uniform noise grain and periodic stripe artifacts in the difference map. "
-            "If brain tissue or bone boundaries appear sharply here, anatomical edges are being eroded."
+            "💡 **Verification Note**: A high-fidelity denoising result shows "
+            "uniform noise grain and periodic ring/stripe residuals without anatomical edge silhouettes."
         )
 
     with col2:

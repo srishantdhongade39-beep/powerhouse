@@ -213,3 +213,71 @@ def test_multi_slice_sorting():
     sorted_res = sort_dicom_slices(shuffled)
     assert [d.InstanceNumber for d in sorted_res] == [1, 2, 3, 4]
 
+
+def test_output_validation_gate(synthetic_slice):
+    from core.output_validation import validate_pipeline_output
+
+    noisy, clean, _ = synthetic_slice
+    val_res = validate_pipeline_output(input_hu=noisy, output_hu=clean)
+    assert val_res["is_valid"] is True
+    assert all(chk["passed"] for chk in val_res["checks"])
+    assert val_res["fallback_applied"] is False
+    assert val_res["safe_output_hu"].shape == clean.shape
+
+    # Test 1: NaN detection
+    corrupted_nan = clean.copy()
+    corrupted_nan[10, 10] = np.nan
+    val_nan = validate_pipeline_output(input_hu=noisy, output_hu=corrupted_nan)
+    assert val_nan["is_valid"] is False
+    assert val_nan["fallback_applied"] is True
+    assert not np.isnan(val_nan["safe_output_hu"]).any()
+    np.testing.assert_array_equal(val_nan["safe_output_hu"], noisy)
+
+    # Test 2: Inf detection
+    corrupted_inf = clean.copy()
+    corrupted_inf[20, 20] = np.inf
+    val_inf = validate_pipeline_output(input_hu=noisy, output_hu=corrupted_inf)
+    assert val_inf["is_valid"] is False
+    assert val_inf["fallback_applied"] is True
+    assert not np.isinf(val_inf["safe_output_hu"]).any()
+
+    # Test 3: Dimensional mismatch
+    mismatched = clean[:64, :64]
+    val_dim = validate_pipeline_output(input_hu=noisy, output_hu=mismatched)
+    assert val_dim["is_valid"] is False
+    assert val_dim["fallback_applied"] is True
+    assert val_dim["safe_output_hu"].shape == noisy.shape
+
+    # Test 4: Severe edge degradation threshold
+    blank_image = np.full_like(noisy, 40.0)  # zero gradients
+    val_edge = validate_pipeline_output(
+        input_hu=noisy,
+        output_hu=blank_image,
+        min_edge_preservation=0.45,
+    )
+    assert val_edge["is_valid"] is False
+    assert val_edge["fallback_applied"] is True
+
+
+def test_decision_trace_and_safe_fallback(synthetic_slice):
+    noisy, clean, _ = synthetic_slice
+    results = run_neuroclear_pipeline(
+        noisy,
+        options={
+            "skip_periodic": False,
+            "skip_poisson": False,
+            "poisson_method": "bilateral",
+        },
+    )
+
+    assert "decision_trace" in results
+    trace = results["decision_trace"]
+    assert trace["version"] == "v0.1.0"
+    assert "execution_time_ms" in trace
+    assert trace["execution_time_ms"] > 0
+    assert "validation_passed" in trace
+    assert trace["validation_passed"] is True
+    assert trace["fallback_applied"] is False
+    assert "timestamp" in trace
+
+

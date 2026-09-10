@@ -149,8 +149,8 @@ def render_ct_viewer(
     window_width: float = 80.0,
     slice_index: int = 0,
     total_slices: int = 1,
-    title_left: str = "Original / Noisy CT Slice",
-    title_right: str = "NeuroClear Denoised Output",
+    title_left: str = "ORIGINAL CT (Raw / Unprocessed)",
+    title_right: str = "NEUROCLEAR PROCESSED CT (Denoised)",
 ) -> None:
     """
     Render comprehensive CT slice inspection view within Streamlit with multiple
@@ -164,7 +164,7 @@ def render_ct_viewer(
             window_width=window_width,
             slice_idx=slice_index,
             total_slices=total_slices,
-            tag_label="ORIGINAL",
+            tag_label="ORIGINAL CT",
         )
         st.image(canvas_orig, caption=f"{title_left} (Slice {slice_index + 1}/{total_slices})", use_container_width=True, clamp=True)
         return
@@ -195,7 +195,7 @@ def render_ct_viewer(
         window_width=window_width,
         slice_idx=slice_index,
         total_slices=total_slices,
-        tag_label="ORIGINAL",
+        tag_label="ORIGINAL CT",
     )
     hud_denoised = _add_hud_overlay(
         denoised_display,
@@ -203,7 +203,7 @@ def render_ct_viewer(
         window_width=window_width,
         slice_idx=slice_index,
         total_slices=total_slices,
-        tag_label="NEUROCLEAR",
+        tag_label="NEUROCLEAR PROCESSED CT",
     )
 
     # 1. Mode: Side-by-Side Synchronized
