@@ -14,6 +14,24 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+COLORSCALE_MAP = {
+    "Bone": [
+        [0.0, "#05080f"],
+        [0.2, "#1a2536"],
+        [0.5, "#4a5d78"],
+        [0.8, "#c4baa8"],
+        [1.0, "#ffffff"],
+    ],
+    "Gray": "gray",
+    "Viridis": "viridis",
+    "Plasma": "plasma",
+    "Thermal": "thermal",
+    "Hot": "hot",
+    "Magma": "magma",
+    "Cividis": "cividis",
+}
+
+
 def render_3d_model(
     volume_hu: List[np.ndarray],
     active_slice_idx: int = 0,
@@ -70,9 +88,9 @@ def render_3d_model(
                 key="select_vol_tissue",
             )
         with col_3d_ctl2:
-            colorscale = st.selectbox(
+            colorscale_name = st.selectbox(
                 "3D Colormap:",
-                ["Bone", "Viridis", "Plasma", "Hot", "Gray"],
+                ["Bone", "Viridis", "Plasma", "Thermal", "Gray"],
                 index=0,
                 key="select_vol_cmap",
             )
@@ -91,6 +109,8 @@ def render_3d_model(
             isomax = float(window_center + window_width / 2.0)
             opacity_val = 0.25
 
+        vol_cmap = COLORSCALE_MAP.get(colorscale_name, "viridis")
+
         fig_vol = go.Figure(
             data=go.Volume(
                 x=x_grid.flatten(),
@@ -101,7 +121,7 @@ def render_3d_model(
                 isomax=isomax,
                 opacity=opacity_val,
                 surface_count=8,
-                colorscale=colorscale.lower(),
+                colorscale=vol_cmap,
                 colorbar=dict(title="HU"),
             )
         )
@@ -177,13 +197,15 @@ def render_3d_model(
             fresnel=0.35,
         )
 
+        surf_cmap = COLORSCALE_MAP.get(color_scheme, "viridis")
+
         fig_surf = go.Figure(
             data=[
                 go.Surface(
                     x=x_coords,
                     y=y_coords,
                     z=sub_slice,
-                    colorscale=color_scheme.lower(),
+                    colorscale=surf_cmap,
                     lighting=lighting_opts,
                     colorbar=dict(title="HU Elevation"),
                     contours=dict(
