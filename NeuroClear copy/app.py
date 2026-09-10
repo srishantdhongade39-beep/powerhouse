@@ -131,6 +131,18 @@ def load_demo_phantom() -> None:
         st.session_state.metadata = get_dicom_metadata(ds)
         st.session_state.raw_dataset = ds
         st.session_state.loaded_source_name = "Synthetic Brain CT Phantom (Injected Noise)"
+def load_real_clinical_sample() -> None:
+    """Load sample real Brain CT clinical DICOM slice from data directory."""
+    from pathlib import Path
+    sample_path = Path(__file__).parent / "data" / "sample_real_brain_ct.dcm"
+    if sample_path.exists():
+        ds = load_dicom(str(sample_path))
+        hu = convert_to_hounsfield_units(ds)
+        st.session_state.hu_slice = hu
+        st.session_state.clean_slice = None
+        st.session_state.metadata = get_dicom_metadata(ds)
+        st.session_state.raw_dataset = ds
+        st.session_state.loaded_source_name = "Real Clinical Brain CT (Patient 1CT1, 128×128)"
         st.session_state.pipeline_results = None
 
 
@@ -156,20 +168,24 @@ def main() -> None:
     with st.sidebar:
         st.header("1. Image Source")
 
-        col_demo, col_reset = st.columns([2, 1])
-        with col_demo:
-            if st.button("🧪 Load Demo Phantom", use_container_width=True, type="primary"):
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            if st.button("🧪 Demo Phantom", use_container_width=True, type="primary"):
                 load_demo_phantom()
                 st.rerun()
-        with col_reset:
-            if st.button("Reset", use_container_width=True):
-                st.session_state.hu_slice = None
-                st.session_state.clean_slice = None
-                st.session_state.metadata = None
-                st.session_state.pipeline_results = None
-                st.session_state.loaded_source_name = None
-                st.session_state.raw_dataset = None
+        with col_b2:
+            if st.button("🏥 Real Clinical CT", use_container_width=True):
+                load_real_clinical_sample()
                 st.rerun()
+
+        if st.button("🔄 Reset Image", use_container_width=True):
+            st.session_state.hu_slice = None
+            st.session_state.clean_slice = None
+            st.session_state.metadata = None
+            st.session_state.pipeline_results = None
+            st.session_state.loaded_source_name = None
+            st.session_state.raw_dataset = None
+            st.rerun()
 
         st.caption("— or upload a CT slice (.dcm, .png, .jpg) —")
         uploaded_file = st.file_uploader(
