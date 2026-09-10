@@ -47,7 +47,6 @@ from visualization.ct_viewer import (
 )
 from visualization.difference_map import render_difference_map
 from visualization.fft_view import render_fft_view
-from visualization.model_3d import render_3d_model
 
 # Streamlit Page Config
 st.set_page_config(
@@ -172,13 +171,13 @@ def init_session_state() -> None:
         st.session_state.volume_hu = []
         st.session_state.volume_clean = []
         st.session_state.volume_datasets = []
-        st.session_state.active_slice_idx = 7
+        st.session_state.active_slice_idx = 0
         st.session_state.processed_cache = {}
         st.session_state.metadata = None
         st.session_state.loaded_source_name = None
         st.session_state.preset_choice = "Brain"
         st.session_state.noise_analyzed = False
-        load_volumetric_brain_phantom()
+        load_real_clinical_sample()
     if "active_slice_idx" not in st.session_state:
         st.session_state.active_slice_idx = 0
     if "processed_cache" not in st.session_state:
@@ -349,12 +348,12 @@ def main() -> None:
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            if st.button("🧪 Demo 16-Slice Brain", use_container_width=True, type="primary"):
-                load_volumetric_brain_phantom()
+            if st.button("🏥 Clinical Brain (4s)", use_container_width=True, type="primary"):
+                load_real_clinical_sample()
                 st.rerun()
         with col_s2:
-            if st.button("🏥 Clinical Brain", use_container_width=True):
-                load_real_clinical_sample()
+            if st.button("🧪 3D Phantom (16s)", use_container_width=True):
+                load_volumetric_brain_phantom()
                 st.rerun()
 
         col_s3, col_s4 = st.columns(2)
@@ -503,15 +502,15 @@ def main() -> None:
             def_radius = 4.0
         elif active_profile == profile_options[1]:  # Soft Tissue
             def_periodic = True
-            def_strength = 0.50
-            def_boost = 1.00
+            def_strength = 1.00
+            def_boost = 1.05
             def_anscombe = False
             def_method_idx = 0
             def_radius = 5.0
         elif active_profile == profile_options[2]:  # Heavy Noise
             def_periodic = True
-            def_strength = 1.0
-            def_boost = 1.10
+            def_strength = 1.35
+            def_boost = 1.15
             def_anscombe = True
             def_method_idx = 0
             def_radius = 6.0
@@ -695,12 +694,11 @@ def main() -> None:
     )
 
     # ------------------ WORKSTATION TABS ------------------
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "👁️ Medical CT Viewer",
         "🌐 Frequency Spectrum (FFT)",
         "🔬 Difference & Residual Map",
         "🔍 Pixel & HU Inspector",
-        "🧊 3D Anatomical Model",
         "📋 DICOM Metadata & Physics",
         "🛡️ Standards & Safety",
         "💾 Medical Export",
@@ -803,16 +801,6 @@ def main() -> None:
             render_interactive_hu_inspector(clean_ref, title="Interactive Clean Reference HU Inspector", pixel_spacing_mm=pixel_spacing)
 
     with tab5:
-        render_3d_model(
-            volume_hu=volume_hu,
-            active_slice_idx=active_idx,
-            window_center=window_center,
-            window_width=window_width,
-            source_name=st.session_state.loaded_source_name,
-            denoised_hu=denoised_hu,
-        )
-
-    with tab6:
         st.markdown("#### 📑 Technical DICOM Metadata")
         meta = st.session_state.metadata or {}
         col_m1, col_m2 = st.columns(2)
@@ -847,7 +835,7 @@ def main() -> None:
             """
         )
 
-    with tab7:
+    with tab6:
         st.markdown("### 🛡️ Standards, Safety & Quality Management System")
         st.caption("Standards-informed framework incorporating IEC 62304, ISO 14971, IEC 62366-1, and IEC 60601-1 principles for medical software prototypes.")
 
@@ -929,7 +917,7 @@ def main() -> None:
             > IEC 60601-1 physical and electrical safety specifications are maintained by the primary diagnostic scanner modality manufacturer.
             """
         )
-    with tab8:
+    with tab7:
         st.markdown("#### 💾 Export Processed Results")
         exp1, exp2, exp3 = st.columns(3)
 
