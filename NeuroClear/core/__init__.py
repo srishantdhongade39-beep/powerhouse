@@ -11,7 +11,9 @@ from core.dicom_loader import (
     convert_to_hounsfield_units,
     get_dicom_metadata,
     load_dicom,
+    load_dicom_files_list,
     load_dicom_series,
+    sort_dicom_slices,
 )
 from core.noise_analysis import (
     analyze_noise,
@@ -33,11 +35,14 @@ from core.quality_metrics import (
 from core.synthetic_data import (
     create_synthetic_dicom_dataset,
     generate_brain_ct_phantom,
+    generate_brain_ct_volume,
 )
 
 __all__ = [
     "load_dicom",
     "load_dicom_series",
+    "load_dicom_files_list",
+    "sort_dicom_slices",
     "convert_to_hounsfield_units",
     "apply_window",
     "WINDOW_PRESETS",
@@ -54,5 +59,6 @@ __all__ = [
     "compute_all_metrics",
     "run_neuroclear_pipeline",
     "generate_brain_ct_phantom",
+    "generate_brain_ct_volume",
     "create_synthetic_dicom_dataset",
 ]

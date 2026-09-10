@@ -8,7 +8,7 @@ with injected periodic scanner artifacts (frequency spikes) and quantum
 Provides an immediate, self-contained test slice for evaluation and live demos.
 """
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pydicom
 from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
