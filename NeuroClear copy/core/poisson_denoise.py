@@ -44,6 +44,101 @@ def _robust_estimate_sigma(image: np.ndarray) -> float:
     return max(0.008, sigma_est)
 
 
+def anisotropic_diffusion_perona_malik(
+    image: np.ndarray,
+    n_iter: int = 8,
+    kappa: float = 20.0,
+    gamma: float = 0.125,
+    conduction_method: str = "exponential",
+    eight_neighbor: bool = True,
+) -> np.ndarray:
+    """
+    Perona-Malik Anisotropic Diffusion Filter for CT restoration (identical to MATLAB imdiffusefilt).
+
+    Solves the nonlinear partial differential equation:
+        dI/dt = div( c(|grad(I)|) * grad(I) )
+
+    Conduction models:
+      - 'exponential' (c1): c(g) = exp( -(g / kappa)^2 )  [Preserves high-contrast edges over low-contrast edges]
+      - 'quadratic'   (c2): c(g) = 1 / (1 + (g / kappa)^2) [Preserves wider regions over smaller regions]
+
+    Args:
+        image: 2D float array (e.g. in [0, 1] or HU).
+        n_iter: Number of diffusion iterations (typically 4 to 20).
+        kappa: Edge gradient conduction threshold. Gradients > kappa act as diffusion boundaries.
+        gamma: Integration constant / step size (<= 0.25 for 4-neighbor, <= 0.125 for 8-neighbor).
+        conduction_method: 'exponential' or 'quadratic'.
+        eight_neighbor: If True, uses 8-directional stencil with diagonal weight 1/sqrt(2).
+
+    Returns:
+        Denoised 2D numpy array with identical dimensions and sharp edge retention.
+    """
+    u = np.array(image, dtype=np.float32, copy=True)
+    k = max(1e-4, float(kappa))
+    g = float(np.clip(gamma, 0.01, 0.125 if eight_neighbor else 0.25))
+    method = str(conduction_method).lower()
+
+    for _ in range(max(1, int(n_iter))):
+        # 4 Cardinal directions
+        deltaN = np.roll(u, -1, axis=0) - u
+        deltaS = np.roll(u, 1, axis=0) - u
+        deltaE = np.roll(u, -1, axis=1) - u
+        deltaW = np.roll(u, 1, axis=1) - u
+
+        # Zero out boundary wraps
+        deltaN[-1, :] = 0
+        deltaS[0, :] = 0
+        deltaE[:, -1] = 0
+        deltaW[:, 0] = 0
+
+        if method == "quadratic":
+            cN = 1.0 / (1.0 + (deltaN / k) ** 2)
+            cS = 1.0 / (1.0 + (deltaS / k) ** 2)
+            cE = 1.0 / (1.0 + (deltaE / k) ** 2)
+            cW = 1.0 / (1.0 + (deltaW / k) ** 2)
+        else:
+            cN = np.exp(-((deltaN / k) ** 2))
+            cS = np.exp(-((deltaS / k) ** 2))
+            cE = np.exp(-((deltaE / k) ** 2))
+            cW = np.exp(-((deltaW / k) ** 2))
+
+        flux = cN * deltaN + cS * deltaS + cE * deltaE + cW * deltaW
+
+        if eight_neighbor:
+            # 4 Diagonal directions (scaled by 1 / sqrt(2) ≈ 0.7071)
+            diag_w = 0.70710678118
+            deltaNE = np.roll(np.roll(u, -1, axis=0), -1, axis=1) - u
+            deltaNW = np.roll(np.roll(u, -1, axis=0), 1, axis=1) - u
+            deltaSE = np.roll(np.roll(u, 1, axis=0), -1, axis=1) - u
+            deltaSW = np.roll(np.roll(u, 1, axis=0), 1, axis=1) - u
+
+            deltaNE[-1, :] = 0
+            deltaNE[:, -1] = 0
+            deltaNW[-1, :] = 0
+            deltaNW[:, 0] = 0
+            deltaSE[0, :] = 0
+            deltaSE[:, -1] = 0
+            deltaSW[0, :] = 0
+            deltaSW[:, 0] = 0
+
+            if method == "quadratic":
+                cNE = 1.0 / (1.0 + (deltaNE / k) ** 2)
+                cNW = 1.0 / (1.0 + (deltaNW / k) ** 2)
+                cSE = 1.0 / (1.0 + (deltaSE / k) ** 2)
+                cSW = 1.0 / (1.0 + (deltaSW / k) ** 2)
+            else:
+                cNE = np.exp(-((deltaNE / k) ** 2))
+                cNW = np.exp(-((deltaNW / k) ** 2))
+                cSE = np.exp(-((deltaSE / k) ** 2))
+                cSW = np.exp(-((deltaSW / k) ** 2))
+
+            flux += diag_w * (cNE * deltaNE + cNW * deltaNW + cSE * deltaSE + cSW * deltaSW)
+
+        u += g * flux
+
+    return u
+
+
 def _anscombe_transform(x: np.ndarray) -> np.ndarray:
     """Forward Anscombe transform: converts Poisson counts into unit-variance Gaussian noise."""
     return 2.0 * np.sqrt(np.maximum(0.0, x) + (3.0 / 8.0))
@@ -64,8 +159,10 @@ def denoise_poisson(
     Args:
         image: 2D numpy array (single slice, typically in HU or windowed space).
         params: Optional configuration dictionary:
-            - 'method': 'nlm' (default), 'bilateral', 'tv', or 'wavelet'
+            - 'method': 'anisotropic' (Perona-Malik), 'nlm', 'bilateral', 'tv', or 'wavelet'
             - 'strength': float factor (0.1 to 3.0, default 1.0)
+            - 'n_iter': int iterations for anisotropic diffusion (default 8)
+            - 'kappa': float gradient threshold for anisotropic diffusion
             - 'use_anscombe': bool (default False)
 
     Returns:
@@ -106,7 +203,26 @@ def denoise_poisson(
     effective_sigma = max(0.025, sigma_est)
 
     # Dispatch to edge-preserving filter
-    if method == "bilateral":
+    if method in ("anisotropic", "perona_malik", "anisodiff"):
+        # Gold-standard PDE anisotropic diffusion (Perona-Malik)
+        n_iter = int(p.get("n_iter", max(4, int(8 * strength))))
+        # Calibrated kappa threshold (in normalized [0, 1] units)
+        user_kappa = p.get("kappa", None)
+        if user_kappa is not None:
+            norm_kappa = float(user_kappa) / max(1.0, orig_range)
+        else:
+            norm_kappa = float(np.clip(1.8 * strength * effective_sigma, 0.015, 0.12))
+        cond_method = str(p.get("conduction_method", "exponential"))
+        denoised_norm = anisotropic_diffusion_perona_malik(
+            filter_input,
+            n_iter=n_iter,
+            kappa=norm_kappa,
+            gamma=0.125,
+            conduction_method=cond_method,
+            eight_neighbor=True,
+        )
+
+    elif method == "bilateral":
         # OpenCV bilateralFilter with tissue-calibrated spatial and range sigma
         d = int(np.clip(5 + 2 * int(strength * 2), 5, 11))
         sigma_color = float(np.clip(2.5 * strength * effective_sigma, 0.06, 0.45))

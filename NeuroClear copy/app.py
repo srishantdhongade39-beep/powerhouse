@@ -252,13 +252,16 @@ def init_session_state() -> None:
         st.session_state.preset_choice = "Brain"
         st.session_state.noise_analyzed = False
         st.session_state.compare_mode = "↔️ Split-Wipe Slider"
-        st.session_state.poisson_method = "nlm"
+        st.session_state.poisson_method = "anisotropic"
         st.session_state.poisson_strength = 0.75   # Stronger default for visible denoising
         st.session_state.detail_boost = 1.35        # Enhance anatomical micro-structures
         st.session_state.enable_periodic = True
         st.session_state.notch_radius = 8.0         # Wider notch to catch thick stripes
         st.session_state.notch_type = "gaussian"
         st.session_state.use_anscombe = True        # Proper Poisson statistics normalization
+        st.session_state.aniso_n_iter = 8
+        st.session_state.aniso_kappa = 15.0
+        st.session_state.aniso_conduction = "Exponential (Edge Priority)"
         st.session_state.window_center = 40.0
         st.session_state.window_width = 80.0
         st.session_state.last_exec_time = 1.42
@@ -267,6 +270,12 @@ def init_session_state() -> None:
         st.session_state.active_slice_idx = 0
     if "processed_cache" not in st.session_state:
         st.session_state.processed_cache = {}
+    if "aniso_n_iter" not in st.session_state:
+        st.session_state.aniso_n_iter = 8
+    if "aniso_kappa" not in st.session_state:
+        st.session_state.aniso_kappa = 15.0
+    if "aniso_conduction" not in st.session_state:
+        st.session_state.aniso_conduction = "Exponential (Edge Priority)"
     if "window_center" not in st.session_state:
         st.session_state.window_center = 40.0
     if "window_width" not in st.session_state:
@@ -749,6 +758,14 @@ def main() -> None:
                     index=op_idx,
                     key="nav_op_select",
                 )
+                st.divider()
+                st.markdown("##### 🔌 MATLAB Engine Link")
+                from core.matlab_bridge import is_matlab_available
+                matlab_ok, matlab_msg = is_matlab_available()
+                if matlab_ok:
+                    st.success("🟢 MATLAB Engine: Ready")
+                else:
+                    st.caption("ℹ️ Native Perona-Malik PDE active. Run `pip install matlabengine` if linking live `.m` scripts.")
 
     # ------------------ SLICE & PIPELINE STATE RESOLUTION ------------------
     volume_hu = st.session_state.volume_hu
@@ -764,7 +781,10 @@ def main() -> None:
 
     # Deterministic CT Restoration Pipeline Execution & Caching
     t0 = time.time()
-    cache_key = f"{active_idx}_{wc}_{ww}_{st.session_state.enable_periodic}_{st.session_state.notch_radius}_{st.session_state.notch_type}_{st.session_state.poisson_method}_{st.session_state.poisson_strength}_{st.session_state.detail_boost}_{st.session_state.use_anscombe}"
+    aniso_iter = int(st.session_state.get("aniso_n_iter", 8))
+    aniso_k = float(st.session_state.get("aniso_kappa", 15.0))
+    aniso_cond = str(st.session_state.get("aniso_conduction", "Exponential"))
+    cache_key = f"{active_idx}_{wc}_{ww}_{st.session_state.enable_periodic}_{st.session_state.notch_radius}_{st.session_state.notch_type}_{st.session_state.poisson_method}_{st.session_state.poisson_strength}_{st.session_state.detail_boost}_{st.session_state.use_anscombe}_{aniso_iter}_{aniso_k}_{aniso_cond}"
     if cache_key not in st.session_state.processed_cache:
         pipeline_opts = {
             "skip_periodic": not st.session_state.enable_periodic,
@@ -776,6 +796,9 @@ def main() -> None:
             "poisson_strength": st.session_state.poisson_strength,
             "detail_boost": st.session_state.detail_boost,
             "use_anscombe": st.session_state.use_anscombe,
+            "n_iter": aniso_iter,
+            "kappa": aniso_k,
+            "conduction_method": "exponential" if "Exponential" in aniso_cond else "quadratic",
             "window_center": wc,
             "window_width": ww,
             "ground_truth": clean_ref,
@@ -1153,10 +1176,16 @@ def main() -> None:
                 st.session_state.window_width = float(WINDOW_PRESETS[sel_win]["width"])
                 st.rerun()
         with tool_c4:
-            alg_options = ["NLM", "Bilateral", "TV Chambolle", "Wavelet"]
-            alg_map = {"NLM": "nlm", "Bilateral": "bilateral", "TV Chambolle": "tv", "Wavelet": "wavelet"}
+            alg_options = ["Perona-Malik (Anisotropic)", "NLM", "Bilateral", "TV Chambolle", "Wavelet"]
+            alg_map = {
+                "Perona-Malik (Anisotropic)": "anisotropic",
+                "NLM": "nlm",
+                "Bilateral": "bilateral",
+                "TV Chambolle": "tv",
+                "Wavelet": "wavelet",
+            }
             rev_alg_map = {v: k for k, v in alg_map.items()}
-            cur_alg_label = rev_alg_map.get(st.session_state.poisson_method, "NLM")
+            cur_alg_label = rev_alg_map.get(st.session_state.poisson_method, "Perona-Malik (Anisotropic)")
             cur_alg_idx = alg_options.index(cur_alg_label) if cur_alg_label in alg_options else 0
             alg_choice = st.selectbox("Engine", alg_options, index=cur_alg_idx, label_visibility="collapsed")
             if alg_map[alg_choice] != st.session_state.poisson_method:

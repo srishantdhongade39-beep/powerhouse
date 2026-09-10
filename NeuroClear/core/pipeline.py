@@ -100,6 +100,9 @@ def run_neuroclear_pipeline(
             "strength": poisson_strength,
             "use_anscombe": use_anscombe,
             "detail_boost": detail_boost,
+            "n_iter": opts.get("n_iter", 8),
+            "kappa": opts.get("kappa", 15.0),
+            "conduction_method": opts.get("conduction_method", "exponential"),
         }
         hu_denoised_raw = denoise_poisson(hu_periodic, params=poisson_params)
     else:

@@ -122,7 +122,7 @@ def test_poisson_noise_estimation(synthetic_slice):
     assert "noise_level" in est
 
 
-@pytest.mark.parametrize("method", ["nlm", "bilateral", "tv", "wavelet"])
+@pytest.mark.parametrize("method", ["anisotropic", "nlm", "bilateral", "tv", "wavelet"])
 def test_poisson_denoise_methods(synthetic_slice, method):
     noisy, clean, _ = synthetic_slice
     denoised = denoise_poisson(noisy, params={"method": method, "strength": 0.8})
@@ -130,6 +130,16 @@ def test_poisson_denoise_methods(synthetic_slice, method):
     assert denoised.shape == noisy.shape
     assert not np.isnan(denoised).any()
     assert not np.isinf(denoised).any()
+
+
+def test_anisotropic_diffusion_perona_malik(synthetic_slice):
+    noisy, clean, _ = synthetic_slice
+    from core.poisson_denoise import anisotropic_diffusion_perona_malik
+    denoised = anisotropic_diffusion_perona_malik(noisy, n_iter=6, kappa=15.0, conduction_method="exponential")
+    assert denoised.shape == noisy.shape
+    assert not np.isnan(denoised).any()
+    epi = calculate_edge_preservation(clean, denoised)
+    assert epi > 0.80
 
 
 def test_anscombe_transform_poisson(synthetic_slice):
