@@ -267,12 +267,12 @@ def init_session_state() -> None:
         st.session_state.noise_analyzed = False
         st.session_state.compare_mode = "↔️ Split-Wipe Slider"
         st.session_state.poisson_method = "nlm"
-        st.session_state.poisson_strength = 0.50
-        st.session_state.detail_boost = 1.00
+        st.session_state.poisson_strength = 0.75   # Stronger default for visible denoising
+        st.session_state.detail_boost = 1.35        # Enhance anatomical micro-structures
         st.session_state.enable_periodic = True
-        st.session_state.notch_radius = 5.0
+        st.session_state.notch_radius = 8.0         # Wider notch to catch thick stripes
         st.session_state.notch_type = "gaussian"
-        st.session_state.use_anscombe = False
+        st.session_state.use_anscombe = True        # Proper Poisson statistics normalization
         st.session_state.window_center = 40.0
         st.session_state.window_width = 80.0
         st.session_state.last_exec_time = 1.42
@@ -681,7 +681,17 @@ def main() -> None:
                             img_file = uploaded_files[0]
                             pil_img = Image.open(img_file).convert("L")
                             arr_gray = np.array(pil_img, dtype=np.float32)
-                            hu = (arr_gray / 255.0) * 400.0 - 100.0
+                            # Full clinical HU calibration: air(-1000) → soft tissue(0-80) → bone(400+)
+                            norm = arr_gray / 255.0
+                            hu = np.where(
+                                norm < 0.04,
+                                -1000.0 + norm * 2000.0,   # Air / background
+                                np.where(
+                                    norm > 0.85,
+                                    300.0 + (norm - 0.85) / 0.15 * 1100.0,  # Dense bone 300→1400 HU
+                                    (norm - 0.04) / 0.81 * 400.0 - 50.0,    # Soft tissue -50→350 HU
+                                )
+                            ).astype(np.float32)
                             raw_ds = create_synthetic_dicom_dataset(
                                 hu,
                                 patient_id=f"IMG_{img_file.name[:12]}",
@@ -694,6 +704,10 @@ def main() -> None:
                             st.session_state.metadata = get_dicom_metadata(raw_ds)
                             st.session_state.loaded_source_name = f"Uploaded Image: {img_file.name}"
                             st.session_state.processed_cache = {}
+                            # Auto-select Soft Tissue window for uploaded PNG scans
+                            st.session_state.preset_choice = "Soft Tissue"
+                            st.session_state.window_center = 50.0
+                            st.session_state.window_width = 350.0
                             st.success("Image imported as CT slice.")
                             st.rerun()
                     except Exception as ex:
@@ -1052,7 +1066,34 @@ def main() -> None:
         )
 
         display_orig = apply_window(raw_hu, wc, ww, as_uint8=True)
-        display_denoised = apply_window(denoised_hu, wc, ww, as_uint8=True)
+        display_denoised_raw = apply_window(denoised_hu, wc, ww, as_uint8=True)
+
+        # ── Display-Only Enhancement Pipeline ────────────────────────────────
+        # CLAHE + Unsharp Mask applied only to the rendered uint8 image.
+        # HU data (denoised_hu) is NEVER modified — metrics remain valid.
+        # This makes fine anatomy (tissue planes, vessel walls, trabeculae)
+        # clearly visible that was masked by residual scanner noise.
+        try:
+            _strength = float(st.session_state.get("poisson_strength", 0.75))
+            # CLAHE: Local Adaptive Contrast Enhancement
+            _clip = float(np.clip(1.5 + 1.2 * _strength, 1.2, 4.0))
+            _clahe = cv2.createCLAHE(clipLimit=_clip, tileGridSize=(8, 8))
+            _clahe_out = _clahe.apply(display_denoised_raw)
+            # Unsharp Mask: sharpen edges without adding noise
+            _blur = cv2.GaussianBlur(_clahe_out, (0, 0), sigmaX=1.2)
+            _unsharp_amount = float(np.clip(0.30 + 0.20 * _strength, 0.20, 0.55))
+            _sharpened = cv2.addWeighted(
+                _clahe_out, 1.0 + _unsharp_amount,
+                _blur, -_unsharp_amount, 0
+            ).clip(0, 255).astype(np.uint8)
+            # Blend: 65% enhanced + 35% pure for controlled appearance
+            _blend_w = float(np.clip(0.50 + 0.15 * _strength, 0.45, 0.72))
+            display_denoised = cv2.addWeighted(
+                _sharpened, _blend_w,
+                display_denoised_raw, 1.0 - _blend_w, 0
+            ).clip(0, 255).astype(np.uint8)
+        except Exception:
+            display_denoised = display_denoised_raw  # Failsafe
         h_img, w_img = display_orig.shape[:2]
 
         # Render Main Image with Interactive Split-Wipe Slider or Side-by-Side

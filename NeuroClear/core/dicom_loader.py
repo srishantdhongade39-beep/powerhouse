@@ -28,15 +28,30 @@ WINDOW_PRESETS: Dict[str, Dict[str, Any]] = {
         "width": 8.0,
         "description": "Early Ischemic Stroke Sensitivity (28 to 36 HU)",
     },
+    "Soft Tissue": {
+        "center": 50.0,
+        "width": 350.0,
+        "description": "General Soft Tissue & Chest (-125 to 225 HU)",
+    },
+    "Chest / Mediastinum": {
+        "center": 40.0,
+        "width": 400.0,
+        "description": "Chest & Mediastinal Structures (-160 to 240 HU)",
+    },
+    "Lung": {
+        "center": -600.0,
+        "width": 1500.0,
+        "description": "Lung Parenchyma & Air Spaces (-1350 to 150 HU)",
+    },
+    "Abdomen": {
+        "center": 60.0,
+        "width": 400.0,
+        "description": "Abdominal Organs & Viscera (-140 to 260 HU)",
+    },
     "Bone": {
         "center": 400.0,
         "width": 1800.0,
         "description": "Cranial Bone & Fractures (-500 to 1300 HU)",
-    },
-    "Soft Tissue": {
-        "center": 50.0,
-        "width": 350.0,
-        "description": "General Head & Neck Soft Tissue (-125 to 225 HU)",
     },
 }
 

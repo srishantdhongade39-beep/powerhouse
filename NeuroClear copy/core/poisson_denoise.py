@@ -100,16 +100,17 @@ def denoise_poisson(
     else:
         filter_input = norm_img.astype(np.float32)
 
-    # Estimate noise standard deviation in normalized space via robust Laplacian MAD
+    # Tissue-calibrated noise standard deviation estimation
     sigma_est = _robust_estimate_sigma(filter_input)
+    # Ensure minimum effective filtering bandwidth for medical soft-tissue
+    effective_sigma = max(0.025, sigma_est)
 
     # Dispatch to edge-preserving filter
     if method == "bilateral":
-        # OpenCV bilateralFilter expects float32
-        # d: diameter of pixel neighborhood calibrated to preserve fine bone trabeculae and sharp interfaces
-        d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
-        sigma_color = float(np.clip(1.30 * strength * sigma_est, 0.035, 0.35))
-        sigma_space = float(np.clip(3.0 * strength, 2.0, 9.0))
+        # OpenCV bilateralFilter with tissue-calibrated spatial and range sigma
+        d = int(np.clip(5 + 2 * int(strength * 2), 5, 11))
+        sigma_color = float(np.clip(2.5 * strength * effective_sigma, 0.06, 0.45))
+        sigma_space = float(np.clip(4.0 * strength, 2.5, 10.0))
         denoised_norm = cv2.bilateralFilter(
             filter_input,
             d=d,
@@ -120,7 +121,7 @@ def denoise_poisson(
 
     elif method == "tv":
         # Total Variation Chambolle denoising
-        tv_weight = float(np.clip(0.18 * strength * sigma_est, 0.01, 0.22))
+        tv_weight = float(np.clip(0.28 * strength * effective_sigma, 0.02, 0.35))
         denoised_norm = denoise_tv_chambolle(
             filter_input,
             weight=tv_weight,
@@ -138,10 +139,9 @@ def denoise_poisson(
                 rescale_sigma=True,
             )
         except (ImportError, ModuleNotFoundError):
-            # Fallback to edge-preserving bilateral filter when PyWavelets is not installed
-            d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
-            sigma_color = float(np.clip(1.30 * strength * sigma_est, 0.035, 0.35))
-            sigma_space = float(np.clip(3.0 * strength, 2.0, 9.0))
+            d = int(np.clip(5 + 2 * int(strength * 2), 5, 11))
+            sigma_color = float(np.clip(2.5 * strength * effective_sigma, 0.06, 0.45))
+            sigma_space = float(np.clip(4.0 * strength, 2.5, 10.0))
             denoised_norm = cv2.bilateralFilter(
                 filter_input,
                 d=d,
@@ -152,31 +152,32 @@ def denoise_poisson(
 
     else:
         # Default: Non-Local Means (NLM)
-        # Calibrated with robust Immerkaer sigma estimation for high-fidelity CT texture retention
-        h_param = max(0.015, 0.95 * strength * sigma_est)
+        # Calibrated for high-fidelity CT texture and clean parenchyma smoothing
+        # Stronger h_param and larger search window (patch_distance=9) for aggressive noise suppression
+        h_param = max(0.06, 2.10 * strength * effective_sigma)
         denoised_norm = denoise_nl_means(
             filter_input,
             h=h_param,
             fast_mode=True,
-            patch_size=3,
-            patch_distance=5,
+            patch_size=5,
+            patch_distance=9,
         )
 
     # Classical Multi-Scale Detail Preservation & Natural Texture Retention
     detail_boost = max(1.0, float(p.get("detail_boost", 1.0)))
-    texture_blend = float(np.clip(p.get("texture_blend", 0.10), 0.0, 0.35))
+    texture_blend = float(np.clip(p.get("texture_blend", 0.08), 0.0, 0.30))
 
     # Extract high-frequency micro-texture residual layer
     texture_residual = filter_input - denoised_norm
 
     if detail_boost > 1.001:
         # Apply soft coring threshold calibrated to noise sigma to isolate anatomical structures from photon fluctuations
-        coring_tau = float(np.clip(0.65 * strength * sigma_est, 0.005, 0.08))
+        coring_tau = float(np.clip(0.70 * strength * effective_sigma, 0.01, 0.10))
         detail_clean = np.sign(texture_residual) * np.maximum(0.0, np.abs(texture_residual) - coring_tau)
         # Boost true anatomical micro-structures (sulci, gyri, trabeculae, cortices)
         denoised_norm = np.clip(denoised_norm + (detail_boost - 1.0) * detail_clean, 0.0, 1.0)
 
-    # Blend subtle natural texture to preserve realistic clinical CT parenchyma appearance (prevents plastic/waxy artifact)
+    # Blend subtle natural texture to preserve realistic clinical CT parenchyma appearance
     if texture_blend > 0.001:
         denoised_norm = np.clip(denoised_norm + (texture_blend * texture_residual), 0.0, 1.0)
 

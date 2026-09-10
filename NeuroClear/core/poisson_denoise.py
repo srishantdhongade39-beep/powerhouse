@@ -153,13 +153,14 @@ def denoise_poisson(
     else:
         # Default: Non-Local Means (NLM)
         # Calibrated for high-fidelity CT texture and clean parenchyma smoothing
-        h_param = max(0.035, 1.60 * strength * effective_sigma)
+        # Stronger h_param and larger search window (patch_distance=9) for aggressive noise suppression
+        h_param = max(0.06, 2.10 * strength * effective_sigma)
         denoised_norm = denoise_nl_means(
             filter_input,
             h=h_param,
             fast_mode=True,
             patch_size=5,
-            patch_distance=7,
+            patch_distance=9,
         )
 
     # Classical Multi-Scale Detail Preservation & Natural Texture Retention
