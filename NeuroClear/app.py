@@ -172,13 +172,13 @@ def init_session_state() -> None:
         st.session_state.volume_hu = []
         st.session_state.volume_clean = []
         st.session_state.volume_datasets = []
-        st.session_state.active_slice_idx = 7
+        st.session_state.active_slice_idx = 0
         st.session_state.processed_cache = {}
         st.session_state.metadata = None
         st.session_state.loaded_source_name = None
         st.session_state.preset_choice = "Brain"
         st.session_state.noise_analyzed = False
-        load_volumetric_brain_phantom()
+        load_real_clinical_sample()
     if "active_slice_idx" not in st.session_state:
         st.session_state.active_slice_idx = 0
     if "processed_cache" not in st.session_state:
@@ -349,12 +349,12 @@ def main() -> None:
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            if st.button("🧪 Demo 16-Slice Brain", use_container_width=True, type="primary"):
-                load_volumetric_brain_phantom()
+            if st.button("🏥 Clinical Brain (4s)", use_container_width=True, type="primary"):
+                load_real_clinical_sample()
                 st.rerun()
         with col_s2:
-            if st.button("🏥 Clinical Brain", use_container_width=True):
-                load_real_clinical_sample()
+            if st.button("🧪 3D Phantom (16s)", use_container_width=True):
+                load_volumetric_brain_phantom()
                 st.rerun()
 
         col_s3, col_s4 = st.columns(2)
