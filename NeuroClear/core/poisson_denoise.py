@@ -204,23 +204,25 @@ def denoise_poisson(
 
     # Dispatch to edge-preserving filter
     if method in ("anisotropic", "perona_malik", "anisodiff"):
-        # Gold-standard PDE anisotropic diffusion (Perona-Malik)
-        n_iter = int(p.get("n_iter", max(4, int(8 * strength))))
-        # Calibrated kappa threshold (in normalized [0, 1] units)
+        # Gold-standard PDE anisotropic diffusion operating directly on CT HU scale
+        n_iter = int(p.get("n_iter", max(4, int(6 * strength))))
+        # Physical HU gradient threshold (default 8.0 to 15.0 HU for brain/soft-tissue)
         user_kappa = p.get("kappa", None)
         if user_kappa is not None:
-            norm_kappa = float(user_kappa) / max(1.0, orig_range)
+            hu_kappa = float(user_kappa)
         else:
-            norm_kappa = float(np.clip(1.8 * strength * effective_sigma, 0.015, 0.12))
+            hu_kappa = float(np.clip(10.0 * strength, 4.0, 25.0))
         cond_method = str(p.get("conduction_method", "exponential"))
-        denoised_norm = anisotropic_diffusion_perona_malik(
-            filter_input,
+        # Run directly on true HU input for maximum physical precision
+        denoised_hu = anisotropic_diffusion_perona_malik(
+            img,
             n_iter=n_iter,
-            kappa=norm_kappa,
+            kappa=hu_kappa,
             gamma=0.125,
             conduction_method=cond_method,
             eight_neighbor=True,
         )
+        return denoised_hu.astype(np.float32)
 
     elif method == "bilateral":
         # OpenCV bilateralFilter with tissue-calibrated spatial and range sigma
