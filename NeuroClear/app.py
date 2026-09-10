@@ -131,6 +131,8 @@ def load_demo_phantom() -> None:
         st.session_state.metadata = get_dicom_metadata(ds)
         st.session_state.raw_dataset = ds
         st.session_state.loaded_source_name = "Synthetic Brain CT Phantom (Injected Noise)"
+
+
 def load_real_clinical_sample() -> None:
     """Load sample real Brain CT clinical DICOM slice from data directory."""
     from pathlib import Path
@@ -144,6 +146,25 @@ def load_real_clinical_sample() -> None:
         st.session_state.raw_dataset = ds
         st.session_state.loaded_source_name = "Real Clinical Brain CT (Patient 1CT1, 128×128)"
         st.session_state.pipeline_results = None
+        st.session_state.preset_choice = "Brain"
+        st.session_state.profile_choice_idx = 1
+
+
+def load_highres_spine_sample() -> None:
+    """Load high-resolution 1024×1024 clinical Chest/Spine CT slice with intricate trabecular bone structure."""
+    from pathlib import Path
+    sample_path = Path(__file__).parent / "data" / "sample_highres_spine_ct.dcm"
+    if sample_path.exists():
+        ds = load_dicom(str(sample_path))
+        hu = convert_to_hounsfield_units(ds)
+        st.session_state.hu_slice = hu
+        st.session_state.clean_slice = None
+        st.session_state.metadata = get_dicom_metadata(ds)
+        st.session_state.raw_dataset = ds
+        st.session_state.loaded_source_name = "High-Res Clinical Spine CT (1024×1024)"
+        st.session_state.pipeline_results = None
+        st.session_state.preset_choice = "Bone"
+        st.session_state.profile_choice_idx = 0
 
 
 def main() -> None:
@@ -168,15 +189,21 @@ def main() -> None:
     with st.sidebar:
         st.header("1. Image Source")
 
-        col_b1, col_b2 = st.columns(2)
+        col_b1, col_b2, col_b3 = st.columns(3)
         with col_b1:
-            if st.button("🧪 Demo Phantom", use_container_width=True, type="primary"):
+            if st.button("🧪 Phantom", use_container_width=True, type="primary"):
                 load_demo_phantom()
                 st.rerun()
         with col_b2:
-            if st.button("🏥 Real Clinical CT", use_container_width=True):
+            if st.button("🏥 Brain CT", use_container_width=True):
                 load_real_clinical_sample()
                 st.rerun()
+        with col_b3:
+            if st.button("🦴 Spine CT", use_container_width=True):
+                load_highres_spine_sample()
+                st.rerun()
+
+        st.caption("💡 **Tip**: Click **'🦴 Spine CT'** to test the 1024×1024 dataset with crisp trabecular micro-architecture.")
 
         if st.button("🔄 Reset Image", use_container_width=True):
             st.session_state.hu_slice = None
@@ -207,8 +234,8 @@ def main() -> None:
                     # Standard image format (PNG, JPG, TIFF)
                     pil_img = Image.open(uploaded_file).convert("L")
                     arr_gray = np.array(pil_img, dtype=np.float32)
-                    # Map 8-bit [0, 255] grayscale to standard CT brain window range [0, 80 HU]
-                    hu = (arr_gray / 255.0) * 80.0
+                    # Map 8-bit [0, 255] grayscale to clinical CT radiodensity range [-500, 1000 HU]
+                    hu = (arr_gray / 255.0) * 1500.0 - 500.0
                     raw_ds = create_synthetic_dicom_dataset(
                         hu,
                         patient_id=f"IMG_{uploaded_file.name[:12]}",
@@ -216,6 +243,8 @@ def main() -> None:
                     )
                     meta = get_dicom_metadata(raw_ds)
                     meta["series_description"] = f"Imported Image ({uploaded_file.name})"
+                    st.session_state.preset_choice = "Bone"
+                    st.session_state.profile_choice_idx = 0
 
                 st.session_state.hu_slice = hu
                 st.session_state.clean_slice = None
@@ -232,14 +261,35 @@ def main() -> None:
         # Windowing Controls
         st.header("2. Display Windowing")
         preset_names = list(WINDOW_PRESETS.keys()) + ["Custom"]
-        selected_preset = st.selectbox(
-            "Preset",
-            options=preset_names,
-            index=0,
-            help="Clinical window presets for brain CT radiodensity inspection.",
-        )
+        preset_default_choice = st.session_state.get("preset_choice", "Brain")
+        preset_index = preset_names.index(preset_default_choice) if preset_default_choice in preset_names else 0
 
-        if selected_preset in WINDOW_PRESETS:
+        col_p1, col_p2 = st.columns([3, 2])
+        with col_p1:
+            selected_preset = st.selectbox(
+                "Preset",
+                options=preset_names,
+                index=preset_index,
+                help="Clinical window presets for brain and musculoskeletal CT radiodensity inspection.",
+            )
+        with col_p2:
+            st.write("")
+            if st.button("✨ Auto Window", help="Calculate optimal window center & width from tissue histogram"):
+                if st.session_state.hu_slice is not None:
+                    h_arr = st.session_state.hu_slice
+                    tissue = h_arr[h_arr > -800.0]
+                    if len(tissue) > 0:
+                        p1 = float(np.percentile(tissue, 2))
+                        p99 = float(np.percentile(tissue, 98))
+                        st.session_state.auto_c = round((p1 + p99) / 2.0, 1)
+                        st.session_state.auto_w = round(max(50.0, p99 - p1), 1)
+                        st.session_state.preset_choice = "Custom"
+                        st.rerun()
+
+        if "auto_c" in st.session_state and selected_preset == "Custom":
+            default_c = float(st.session_state.auto_c)
+            default_w = float(st.session_state.auto_w)
+        elif selected_preset in WINDOW_PRESETS:
             default_c = float(WINDOW_PRESETS[selected_preset]["center"])
             default_w = float(WINDOW_PRESETS[selected_preset]["width"])
         else:
@@ -272,34 +322,39 @@ def main() -> None:
             "⚡ Heavy Low-Dose Quantum Noise",
             "🛠️ Custom Tuning",
         ]
+        profile_default_idx = st.session_state.get("profile_choice_idx", 1)
         active_profile = st.selectbox(
             "Preservation Profile",
             options=profile_options,
-            index=1,
+            index=profile_default_idx,
             help="Automatically presets filter strength and variance stabilization tailored to target tissue.",
         )
 
         if active_profile == profile_options[0]:  # Bone
             def_periodic = False
-            def_strength = 0.25
+            def_strength = 0.30
+            def_boost = 1.25
             def_anscombe = False
             def_method_idx = 0  # NLM
             def_radius = 4.0
         elif active_profile == profile_options[1]:  # Soft Tissue
             def_periodic = True
             def_strength = 0.50
+            def_boost = 1.00
             def_anscombe = False
             def_method_idx = 0  # NLM
             def_radius = 5.0
         elif active_profile == profile_options[2]:  # Heavy Noise
             def_periodic = True
             def_strength = 1.0
+            def_boost = 1.10
             def_anscombe = True
             def_method_idx = 0  # NLM
             def_radius = 6.0
         else:  # Custom
             def_periodic = False
             def_strength = 0.40
+            def_boost = 1.15
             def_anscombe = False
             def_method_idx = 0
             def_radius = 5.0
@@ -358,6 +413,15 @@ def main() -> None:
             disabled=not enable_poisson,
             help="Lower values (0.2–0.4) preserve fine bone trabeculae and micro-textures. Higher values (>0.8) produce stronger smoothing.",
         )
+        detail_boost = st.slider(
+            "Classical Detail & Micro-Structure Boost (β)",
+            min_value=1.00,
+            max_value=1.60,
+            value=float(def_boost),
+            step=0.05,
+            disabled=not enable_poisson,
+            help="Mathematical detail preservation via base-detail layer decomposition (I = B + β·D_coring). Enhances authentic trabeculae and micro-edges without generative hallucinations.",
+        )
         use_anscombe = st.checkbox(
             "Anscombe Variance Stabilization",
             value=def_anscombe,
@@ -401,6 +465,7 @@ def main() -> None:
             "threshold_factor": fft_threshold,
             "poisson_method": poisson_method,
             "poisson_strength": poisson_strength,
+            "detail_boost": detail_boost,
             "use_anscombe": use_anscombe,
             "window_center": window_center,
             "window_width": window_width,
@@ -479,13 +544,14 @@ def main() -> None:
     ])
 
     with tab1:
+        notch_label = " + Notch" if enable_periodic else ""
         render_ct_viewer(
             original_display=display_orig,
             denoised_display=display_denoised,
             hu_original=hu_slice,
             hu_denoised=denoised_hu,
             title_left="Original / Noisy CT Slice",
-            title_right=f"NeuroClear Output ({poisson_method.upper()} + Notch)",
+            title_right=f"NeuroClear Output ({poisson_method.upper()}{notch_label})",
         )
 
         st.markdown("#### 🔍 Interactive HU Pixel Inspector")

@@ -147,6 +147,17 @@ def denoise_poisson(
             patch_distance=5,
         )
 
+    # Classical Multi-Scale Detail Preservation & Adaptive Edge Boost
+    detail_boost = max(1.0, float(p.get("detail_boost", 1.0)))
+    if detail_boost > 1.001:
+        # Extract classical high-frequency detail layer D = Input - Base
+        detail = filter_input - denoised_norm
+        # Apply soft coring threshold to extinguish quantum noise fluctuations
+        coring_tau = float(np.clip(0.012 * strength, 0.003, 0.05))
+        detail_clean = np.sign(detail) * np.maximum(0.0, np.abs(detail) - coring_tau)
+        # Boost true anatomical micro-structures (trabeculae, cortices)
+        denoised_norm = np.clip(denoised_norm + (detail_boost - 1.0) * detail_clean, 0.0, 1.0)
+
     # Invert Anscombe transform if applied
     if use_anscombe:
         restored_anscombe = (denoised_norm * t_range) + t_min

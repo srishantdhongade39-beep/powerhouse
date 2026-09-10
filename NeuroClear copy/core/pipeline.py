@@ -88,6 +88,7 @@ def run_neuroclear_pipeline(
         metadata = get_dicom_metadata(ds)
         hu_original = convert_to_hounsfield_units(ds)
     else:
+        # File path or stream
         ds = load_dicom(dicom_input)
         metadata = get_dicom_metadata(ds)
         hu_original = convert_to_hounsfield_units(ds)
@@ -109,10 +110,12 @@ def run_neuroclear_pipeline(
 
     # 4. Poisson / Quantum Noise Reduction (Edge-Preserving Filtering)
     if not skip_poisson:
+        detail_boost = float(opts.get("detail_boost", 1.0))
         poisson_params = {
             "method": poisson_method,
             "strength": poisson_strength,
             "use_anscombe": use_anscombe,
+            "detail_boost": detail_boost,
         }
         hu_denoised = denoise_poisson(hu_periodic, params=poisson_params)
     else:
@@ -127,6 +130,7 @@ def run_neuroclear_pipeline(
     metrics = compute_all_metrics(hu_original, hu_denoised)
     metrics["edge_preservation"] = metrics["edge_preservation_index"]
 
+    # If clean ground truth is available (e.g. from synthetic phantom), compute improvement metrics
     gt_metrics: Optional[Dict[str, Any]] = None
     if ground_truth is not None and ground_truth.shape == hu_original.shape:
         gt = np.asarray(ground_truth, dtype=np.float64)

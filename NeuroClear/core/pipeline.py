@@ -110,10 +110,12 @@ def run_neuroclear_pipeline(
 
     # 4. Poisson / Quantum Noise Reduction (Edge-Preserving Filtering)
     if not skip_poisson:
+        detail_boost = float(opts.get("detail_boost", 1.0))
         poisson_params = {
             "method": poisson_method,
             "strength": poisson_strength,
             "use_anscombe": use_anscombe,
+            "detail_boost": detail_boost,
         }
         hu_denoised = denoise_poisson(hu_periodic, params=poisson_params)
     else:
