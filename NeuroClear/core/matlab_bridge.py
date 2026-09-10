@@ -25,10 +25,17 @@ def is_matlab_available() -> Tuple[bool, str]:
     and ready to use on this machine.
     """
     global _MATLAB_AVAILABLE
-    spec = importlib.util.find_spec("matlab.engine")
-    if spec is not None:
-        _MATLAB_AVAILABLE = True
-        return True, "MATLAB Engine for Python is available."
+    if _MATLAB_AVAILABLE is not None:
+        return _MATLAB_AVAILABLE, "MATLAB Engine for Python is available." if _MATLAB_AVAILABLE else "matlabengine package is not installed."
+    try:
+        spec = importlib.util.find_spec("matlab")
+        if spec is not None:
+            spec_eng = importlib.util.find_spec("matlab.engine")
+            if spec_eng is not None:
+                _MATLAB_AVAILABLE = True
+                return True, "MATLAB Engine for Python is available."
+    except Exception:
+        pass
     _MATLAB_AVAILABLE = False
     return False, "matlabengine package is not installed. Run 'pip install matlabengine' to enable live MATLAB execution."
 
