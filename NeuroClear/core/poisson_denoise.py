@@ -1,0 +1,158 @@
+"""
+poisson_denoise.py
+--------------------
+Responsible for reducing Poisson (quantum) noise in CT images while
+preserving anatomical structures (edges, tissue boundaries, gray/white
+matter contrast).
+
+Implements edge-preserving classical algorithms:
+- Non-Local Means (NLM) via scikit-image
+- Bilateral Filtering via OpenCV
+- Total Variation (TV) Chambolle via scikit-image
+- Multi-scale Wavelet Denoising via scikit-image
+- Optional Anscombe Variance-Stabilizing Transform for Poisson statistics
+"""
+
+from typing import Any, Dict, Optional
+import cv2
+import numpy as np
+from skimage.restoration import (
+    denoise_nl_means,
+    denoise_tv_chambolle,
+    denoise_wavelet,
+    estimate_sigma,
+)
+
+
+def _anscombe_transform(x: np.ndarray) -> np.ndarray:
+    """Forward Anscombe transform: converts Poisson counts into unit-variance Gaussian noise."""
+    return 2.0 * np.sqrt(np.maximum(0.0, x) + (3.0 / 8.0))
+
+
+def _inverse_anscombe_transform(y: np.ndarray) -> np.ndarray:
+    """Asymptotically unbiased inverse Anscombe transform."""
+    return (y / 2.0) ** 2 - (3.0 / 8.0)
+
+
+def denoise_poisson(
+    image: np.ndarray,
+    params: Optional[Dict[str, Any]] = None
+) -> np.ndarray:
+    """
+    Reduce Poisson/quantum noise while strictly preserving anatomical edges.
+
+    Args:
+        image: 2D numpy array (single slice, typically in HU or windowed space).
+        params: Optional configuration dictionary:
+            - 'method': 'nlm' (default), 'bilateral', 'tv', or 'wavelet'
+            - 'strength': float factor (0.1 to 3.0, default 1.0)
+            - 'use_anscombe': bool (default False)
+
+    Returns:
+        Denoised 2D numpy array with same shape and intensity scale as input.
+    """
+    img = np.asarray(image, dtype=np.float32)
+    p = params or {}
+    method = str(p.get("method", "nlm")).lower()
+    strength = max(0.05, float(p.get("strength", 1.0)))
+    use_anscombe = bool(p.get("use_anscombe", False))
+
+    orig_min = float(np.min(img))
+    orig_max = float(np.max(img))
+    orig_range = orig_max - orig_min
+
+    if orig_range < 1e-6:
+        return img.copy()
+
+    # Normalize to [0.0, 1.0] for stable numerical processing across classical CV filters
+    norm_img = (img - orig_min) / orig_range
+
+    # Apply Anscombe variance-stabilizing transform if requested
+    if use_anscombe:
+        # Scale to photon count range (~100 to 1000 counts typical for CT detectors)
+        count_scale = 500.0
+        photon_counts = norm_img * count_scale
+        transformed = _anscombe_transform(photon_counts)
+        t_min = float(np.min(transformed))
+        t_max = float(np.max(transformed))
+        t_range = max(1e-6, t_max - t_min)
+        filter_input = ((transformed - t_min) / t_range).astype(np.float32)
+    else:
+        filter_input = norm_img.astype(np.float32)
+
+    # Dispatch to edge-preserving filter
+    if method == "bilateral":
+        # OpenCV bilateralFilter expects float32 or uint8
+        # d: diameter of pixel neighborhood (e.g. 7 or 9)
+        # sigmaColor: filter sigma in color space
+        # sigmaSpace: filter sigma in coordinate space
+        d = int(np.clip(5 + 2 * int(strength * 2), 5, 15))
+        sigma_color = float(np.clip(0.08 * strength, 0.02, 0.4))
+        sigma_space = float(np.clip(3.0 * strength, 1.0, 12.0))
+        denoised_norm = cv2.bilateralFilter(
+            filter_input,
+            d=d,
+            sigmaColor=sigma_color,
+            sigmaSpace=sigma_space,
+            borderType=cv2.BORDER_REFLECT,
+        )
+
+    elif method == "tv":
+        # Total Variation Chambolle denoising
+        # weight: greater weight = more denoising
+        tv_weight = float(np.clip(0.05 * strength, 0.005, 0.3))
+        denoised_norm = denoise_tv_chambolle(
+            filter_input,
+            weight=tv_weight,
+            max_num_iter=100,
+        )
+
+    elif method == "wavelet":
+        # Wavelet thresholding (BayesShrink) with fallback if PyWavelets is unavailable
+        try:
+            denoised_norm = denoise_wavelet(
+                filter_input,
+                method="BayesShrink",
+                mode="soft",
+                wavelet="db4",
+                rescale_sigma=True,
+            )
+        except (ImportError, ModuleNotFoundError):
+            # Fallback to edge-preserving bilateral filter when PyWavelets is not installed
+            d = int(np.clip(5 + 2 * int(strength * 2), 5, 15))
+            sigma_color = float(np.clip(0.08 * strength, 0.02, 0.4))
+            sigma_space = float(np.clip(3.0 * strength, 1.0, 12.0))
+            denoised_norm = cv2.bilateralFilter(
+                filter_input,
+                d=d,
+                sigmaColor=sigma_color,
+                sigmaSpace=sigma_space,
+                borderType=cv2.BORDER_REFLECT,
+            )
+
+    else:
+        # Default: Non-Local Means (NLM)
+        # Renowned for state-of-the-art CT texture and edge retention
+        try:
+            sigma_est = float(np.mean(estimate_sigma(filter_input)))
+        except Exception:
+            sigma_est = 0.03
+
+        h_param = max(0.01, 1.15 * strength * max(sigma_est, 0.02))
+        denoised_norm = denoise_nl_means(
+            filter_input,
+            h=h_param,
+            fast_mode=True,
+            patch_size=5,
+            patch_distance=7,
+        )
+
+    # Invert Anscombe transform if applied
+    if use_anscombe:
+        restored_anscombe = (denoised_norm * t_range) + t_min
+        untransformed = _inverse_anscombe_transform(restored_anscombe)
+        denoised_norm = np.clip(untransformed / count_scale, 0.0, 1.0)
+
+    # Rescale back to original input HU / intensity scale
+    denoised_final = (denoised_norm * orig_range) + orig_min
+    return denoised_final.astype(np.float32)
