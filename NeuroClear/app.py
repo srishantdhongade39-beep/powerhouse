@@ -847,8 +847,7 @@ def main() -> None:
             """
         )
 
-<<<<<<< HEAD
-    with tab6:
+    with tab7:
         st.markdown("### 🛡️ Standards, Safety & Quality Management System")
         st.caption("Standards-informed framework incorporating IEC 62304, ISO 14971, IEC 62366-1, and IEC 60601-1 principles for medical software prototypes.")
 
