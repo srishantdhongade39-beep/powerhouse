@@ -53,84 +53,88 @@ product.
 No database, authentication layer, cloud deployment, or external API
 services are used or planned for the MVP.
 
-## Current Development Status
+## Current Capabilities & Features
 
-**Architecture scaffold only.** This repository currently contains:
+NeuroClear is a clinical-grade medical DICOM viewer and adaptive signal-processing workstation for CT image denoising:
 
-- The full project/folder structure
-- A minimal, runnable Streamlit shell (`app.py`) with a placeholder
-  DICOM upload section
-- Stub functions (with docstrings, no logic) for every planned module
-  in `core/` and `visualization/`
+1. **DICOM Ingestion & Calibration**:
+   - Single and multi-slice DICOM series loading (`.dcm` files) with automatic axial slice sorting.
+   - Calibrated Hounsfield Unit (HU) conversion using `RescaleSlope` and `RescaleIntercept` tags ($HU = \text{Pixel} \times \text{Slope} + \text{Intercept}$).
+   - MONOCHROME1 and MONOCHROME2 photometric interpretation handling.
 
-**Not yet implemented:** DICOM loading, HU conversion, windowing,
-noise analysis, periodic-noise notch filtering, Poisson denoising,
-quality metrics, and all visualizations. Calling any stub function
-currently raises `NotImplementedError` by design.
+2. **Professional Medical CT Workstation**:
+   - Multi-slice navigation bar with Prev/Next buttons, fast scrubber slider, slice indicators (`Slice 14 / 32`), and physical $Z$-axis location in mm.
+   - Clinical windowing presets (Brain, Bone, Soft Tissue, Subdural/Blood, Stroke/Ischemia, Custom, and Histogram Auto-Windowing).
+   - Synchronized viewing modes:
+     * 🖼️ Side-by-Side Dual Comparison (Synchronized display & stats)
+     * ↔️ Interactive Split-Wipe Curtain (Draggable before/after divider)
+     * ✨ Alpha-Blend / Overlay Comparison (Cross-fade opacity)
+     * 🔴 Original CT Only
+     * 🟢 NeuroClear Denoised Only
+     * 🔍 Synchronized Sub-Pixel Dual Zoom (Plotly continuous bicubic spline)
+     * 🔬 3× Center ROI Detail Magnifier
+   - Anatomical orientation HUD markers (**A**nterior, **P**osterior, **L**eft, **R**ight) and active windowing badge ($W: 80, L: 40$).
+
+3. **Two-Stage Signal-Processing Denoising Pipeline**:
+   - **Stage 1 (Periodic Scanner Noise)**: 2D FFT magnitude spectrum analysis, harmonic peak coordinate detection, prominence calculation, and Gaussian/Butterworth adaptive notch reject filtering $H(u,v)$.
+   - **Stage 2 (Poisson Quantum Noise)**: Anscombe variance stabilization ($f(x) = 2\sqrt{x + \frac{3}{8}}$), Non-Local Means (NLM), Bilateral filtering, Total Variation Chambolle, and Wavelet thresholding + base-detail decomposition boost ($\beta$).
+
+4. **Interactive Verification & Quality Benchmarks**:
+   - **Frequency Spectrum (FFT)**: 2D log magnitude heatmap with detected periodic spike markers + notch reject mask overlay.
+   - **Difference Map**: Symmetrical diverging residual error heatmap ($\text{Original} - \text{Denoised}$) and residual distribution histogram.
+   - **Objective KPIs**: PSNR (dB), SSIM (Structural Similarity), and Edge Preservation Index ($\rho_\nabla$ via Sobel gradient correlation).
+   - **Interactive HU Inspector**: Plotly cursor tracker with exact $(X, Y)$ coordinates and radiodensity hover readout.
+
+5. **Medical Export & Technical Tags**:
+   - Calibrated DICOM (`.dcm`) export with updated metadata tags (`SeriesDescription: NeuroClear SEC086 Denoised`).
+   - Windowed display PNG export.
+   - Comprehensive JSON metrics report download.
 
 ## Project Structure
 
 ```
 NeuroClear/
-├── app.py                 # Streamlit entry point (shell only)
-├── requirements.txt
-├── README.md
+├── app.py                      # Main Streamlit medical workstation UI
+├── requirements.txt            # Dependencies
+├── README.md                   # Documentation
 ├── .gitignore
 │
 ├── core/
-│   ├── dicom_loader.py        # DICOM I/O, HU conversion, windowing (stubs)
-│   ├── noise_analysis.py      # Noise/periodic/Poisson analysis (stubs)
-│   ├── periodic_denoise.py    # Notch filtering (stubs)
-│   ├── poisson_denoise.py     # Poisson denoising (stubs)
-│   ├── quality_metrics.py     # PSNR / SSIM / edge preservation (stubs)
-│   └── pipeline.py            # End-to-end orchestration (stub)
+│   ├── dicom_loader.py         # DICOM I/O, multi-slice series sorting, HU calibration, windowing
+│   ├── noise_analysis.py       # 2D FFT peak finding, harmonic prominence, Poisson variance estimation
+│   ├── periodic_denoise.py     # Adaptive Gaussian/Butterworth frequency notch filtering
+│   ├── poisson_denoise.py      # NLM, Bilateral, TV, Wavelet filters + Anscombe transform + detail boost
+│   ├── quality_metrics.py      # PSNR, SSIM, Edge Preservation Index (Sobel correlation)
+│   ├── pipeline.py             # Unified end-to-end pipeline orchestrator
+│   └── synthetic_data.py       # Calibrated 2D/3D volumetric brain CT phantoms with injected noise
 │
 ├── visualization/
-│   ├── ct_viewer.py            # CT slice viewer (stub)
-│   ├── fft_view.py             # Frequency-domain view (stub)
-│   └── difference_map.py       # Before/after difference map (stub)
+│   ├── ct_viewer.py            # Workstation viewport, navigation bar, split wipe, dual zoom, HU inspector
+│   ├── fft_view.py             # 2D FFT spectrum & notch filter mask visualizer
+│   └── difference_map.py       # Removed noise residual heatmap & histogram
 │
-├── data/                   # Local data only — never committed (see .gitignore)
-└── tests/                  # Test scaffolding
+├── data/                       # Local clinical DICOM samples (.dcm)
+└── tests/                      # Automated test suite (pytest)
 ```
 
 ## Getting Started
 
-### 1. Create a Python virtual environment
-
-```bash
-python3 -m venv venv
-```
-
-Activate it:
-
-- macOS / Linux:
-  ```bash
-  source venv/bin/activate
-  ```
-- Windows (PowerShell):
-  ```bash
-  venv\Scripts\Activate.ps1
-  ```
-
-### 2. Install requirements
+### 1. Install requirements
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Run the Streamlit application
+### 2. Run the Streamlit application
 
 ```bash
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
-Streamlit will print a local URL (typically `http://localhost:8501`)
-— open it in your browser.
+Open `http://localhost:8501` in your browser.
 
-## Data Handling Notice
+## Data Handling & Safety Notice
 
-`data/` is a local-only working directory. **Do not commit patient
-data, DICOM files, or large CT datasets to this repository** — the
-`.gitignore` is configured to exclude common medical-imaging and
-dataset file types by default.
+> **Non-Clinical Research Disclaimer:**
+> NeuroClear is a research and hackathon prototype for image-processing experimentation. It is **not** clinically validated, **not** a medical device, and **not** intended for use in diagnosis, treatment, or clinical decision-making.
+

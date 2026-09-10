@@ -41,7 +41,7 @@ from core.synthetic_data import (
 @pytest.fixture
 def synthetic_slice():
     noisy, clean, info = generate_brain_ct_phantom(
-        size=128,
+        size=128,  # Fast size for test execution
         add_periodic_artifact=True,
         periodic_amplitude=30.0,
         add_poisson_noise=True,
@@ -56,6 +56,7 @@ def test_synthetic_data_generation(synthetic_slice):
     assert clean.shape == (128, 128)
     assert info["periodic_injected"] is True
     assert info["poisson_injected"] is True
+    # Skull should be ~1000 HU
     assert np.max(clean) >= 900.0
 
 
@@ -73,11 +74,13 @@ def test_dicom_io_and_metadata(synthetic_slice):
 
     hu = convert_to_hounsfield_units(ds)
     assert hu.shape == (128, 128)
+    # HU should match original noisy values within rounding error of int16
     np.testing.assert_allclose(hu, noisy, atol=2.0)
 
 
 def test_apply_window(synthetic_slice):
     _, clean, _ = synthetic_slice
+    # Brain window: center=40, width=80 -> [0, 80]
     win_uint8 = apply_window(clean, window_center=40.0, window_width=80.0, as_uint8=True)
     assert win_uint8.dtype == np.uint8
     assert win_uint8.shape == clean.shape
@@ -109,6 +112,7 @@ def test_periodic_noise_removal(synthetic_slice):
     assert denoised_periodic.shape == noisy.shape
     assert mask.shape == noisy.shape
     assert 0.0 <= np.min(mask) <= 1.0
+    # Notch filter should suppress variance introduced by the sinusoidal wave
     assert np.var(denoised_periodic) < np.var(noisy)
 
 
@@ -140,6 +144,7 @@ def test_anscombe_transform_poisson(synthetic_slice):
 
 def test_quality_metrics(synthetic_slice):
     _, clean, _ = synthetic_slice
+    # Identical images
     psnr_perfect = calculate_psnr(clean, clean)
     assert psnr_perfect >= 99.0
 
@@ -149,6 +154,7 @@ def test_quality_metrics(synthetic_slice):
     epi_perfect = calculate_edge_preservation(clean, clean)
     assert np.isclose(epi_perfect, 1.0, atol=1e-2)
 
+    # With noise added
     noisy = clean + np.random.normal(0, 10.0, size=clean.shape)
     metrics = compute_all_metrics(clean, noisy)
     assert 10.0 < metrics["psnr_db"] < 60.0
@@ -178,8 +184,32 @@ def test_full_pipeline_orchestration(synthetic_slice):
     assert "metrics" in results
     assert "ground_truth_metrics" in results
 
+    # Check that edge preservation is high
     assert results["metrics"]["edge_preservation"] > 0.75
 
+    # Check that ground truth metrics demonstrate PSNR / SSIM improvement
     gt_m = results["ground_truth_metrics"]
     assert gt_m["output_psnr_db"] > gt_m["input_psnr_db"]
     assert gt_m["output_ssim"] >= gt_m["input_ssim"]
+
+
+def test_volume_generation():
+    from core.synthetic_data import generate_brain_ct_volume
+    noisy_v, clean_v, datasets = generate_brain_ct_volume(num_slices=4, size=64)
+    assert len(noisy_v) == 4
+    assert len(clean_v) == 4
+    assert len(datasets) == 4
+    assert noisy_v[0].shape == (64, 64)
+    assert datasets[0].SliceThickness == 3.0
+    assert hasattr(datasets[0], "SliceLocation")
+
+
+def test_multi_slice_sorting():
+    from core.dicom_loader import sort_dicom_slices
+    from core.synthetic_data import generate_brain_ct_volume
+    _, _, datasets = generate_brain_ct_volume(num_slices=4, size=64)
+    # Shuffle datasets
+    shuffled = [datasets[2], datasets[0], datasets[3], datasets[1]]
+    sorted_res = sort_dicom_slices(shuffled)
+    assert [d.InstanceNumber for d in sorted_res] == [1, 2, 3, 4]
+

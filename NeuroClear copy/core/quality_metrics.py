@@ -124,12 +124,14 @@ def calculate_edge_preservation(
     edge_mask = grad_ref >= edge_thresh
 
     if np.sum(edge_mask) < 20:
+        # Fallback to entire image if few edge pixels
         g1 = grad_ref.ravel()
         g2 = grad_proc.ravel()
     else:
         g1 = grad_ref[edge_mask]
         g2 = grad_proc[edge_mask]
 
+    # Pearson correlation coefficient between edge gradients
     g1_mean = np.mean(g1)
     g2_mean = np.mean(g2)
     numerator = np.sum((g1 - g1_mean) * (g2 - g2_mean))
@@ -160,6 +162,7 @@ def compute_all_metrics(
     mse_val = float(np.mean((ref - proc) ** 2))
     mae_val = float(np.mean(np.abs(ref - proc)))
 
+    # Estimate noise variance change in homogeneous regions
     diff = proc - ref
     noise_power_removed = float(np.var(diff))
 

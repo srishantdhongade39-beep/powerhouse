@@ -52,6 +52,9 @@ def render_difference_map(
             labels={"x": "X", "y": "Y", "color": "Δ HU"},
         )
         fig_diff.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#0A0E17",
+            plot_bgcolor="#0A0E17",
             height=460,
             margin=dict(l=10, r=10, t=30, b=10),
             coloraxis_colorbar=dict(title="HU Residual"),
@@ -76,11 +79,14 @@ def render_difference_map(
             go.Bar(
                 x=bin_centers,
                 y=hist,
-                marker_color="#2E86AB",
+                marker_color="#00E5FF",
                 name="Residual Counts",
             )
         )
         fig_hist.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#0A0E17",
+            plot_bgcolor="#0A0E17",
             height=460,
             margin=dict(l=10, r=10, t=30, b=10),
             xaxis_title="Difference (HU)",
@@ -88,6 +94,7 @@ def render_difference_map(
             showlegend=False,
         )
         st.plotly_chart(fig_hist, use_container_width=True)
+
 
         mean_diff = float(np.mean(diff_flat))
         std_diff = float(np.std(diff_flat))

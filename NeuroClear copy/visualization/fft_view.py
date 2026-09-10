@@ -68,12 +68,14 @@ def render_fft_view(
             hover_texts = []
 
             for p in peaks:
+                # Primary peak
                 r, c = p["row"], p["col"]
                 u, v = p["u"], p["v"]
                 peak_x.append(c)
                 peak_y.append(r)
                 hover_texts.append(f"Peak (u={u}, v={v})<br>Freq: {p['freq_normalized']:.3f}<br>Prominence: {p['prominence']:.2f}")
 
+                # Conjugate peak
                 conj = p.get("conjugate", {})
                 if conj:
                     peak_x.append(conj["col"])
@@ -98,6 +100,9 @@ def render_fft_view(
             )
 
         fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#0A0E17",
+            plot_bgcolor="#0A0E17",
             height=460,
             margin=dict(l=10, r=10, t=30, b=10),
             xaxis=dict(showgrid=False, zeroline=False),
@@ -124,6 +129,9 @@ def render_fft_view(
                 )
             )
             mask_fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0A0E17",
+                plot_bgcolor="#0A0E17",
                 height=460,
                 margin=dict(l=10, r=10, t=30, b=10),
                 xaxis=dict(showgrid=False, zeroline=False),
@@ -133,3 +141,4 @@ def render_fft_view(
             st.caption("Notch filter smoothly zeroes out detected artifact spike coordinates while passing 100% of anatomical frequency spectrum.")
         else:
             st.info("Run the denoising pipeline to generate the notch reject filter mask.")
+

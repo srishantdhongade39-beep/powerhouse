@@ -133,15 +133,48 @@ def load_dicom_series(directory_path: Union[str, Path]) -> List[pydicom.Dataset]
     if not slices:
         raise ValueError(f"No valid DICOM slice files found in: {directory_path}")
 
+    return sort_dicom_slices(slices)
+
+
+def sort_dicom_slices(slices: List[pydicom.Dataset]) -> List[pydicom.Dataset]:
+    """
+    Sort a list of DICOM slice datasets anatomically along the axial Z-axis
+    using ImagePositionPatient[2], SliceLocation, or InstanceNumber.
+    """
     def sort_key(s: pydicom.Dataset):
         if hasattr(s, "ImagePositionPatient") and len(s.ImagePositionPatient) >= 3:
-            return float(s.ImagePositionPatient[2])
+            try:
+                return (0, float(s.ImagePositionPatient[2]))
+            except Exception:
+                pass
         if hasattr(s, "SliceLocation") and s.SliceLocation is not None:
-            return float(s.SliceLocation)
-        return int(getattr(s, "InstanceNumber", 0))
+            try:
+                return (1, float(s.SliceLocation))
+            except Exception:
+                pass
+        return (2, int(getattr(s, "InstanceNumber", 0)))
 
-    slices.sort(key=sort_key)
-    return slices
+    return sorted(slices, key=sort_key)
+
+
+def load_dicom_files_list(files_list: List[Any]) -> List[pydicom.Dataset]:
+    """
+    Load a list of DICOM file objects (such as Streamlit UploadedFile objects or file paths)
+    and return an anatomically ordered list of pydicom.Dataset objects.
+    """
+    valid_slices = []
+    for f in files_list:
+        try:
+            ds = load_dicom(f)
+            valid_slices.append(ds)
+        except Exception:
+            continue
+
+    if not valid_slices:
+        raise ValueError("No valid DICOM datasets with pixel data could be read from the uploaded files.")
+
+    return sort_dicom_slices(valid_slices)
+
 
 
 def convert_to_hounsfield_units(
