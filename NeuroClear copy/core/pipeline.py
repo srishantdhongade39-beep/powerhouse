@@ -2,14 +2,17 @@
 pipeline.py
 -------------
 Responsible for orchestrating the end-to-end NeuroClear CT denoising flow:
-1. DICOM Ingestion & HU conversion
+1. DICOM Ingestion & HU conversion (Immutable original preservation)
 2. Pre-denoise Noise Characterization (FFT peak detection & Poisson variance)
 3. Periodic Scanner Noise Removal (adaptive notch filtering)
 4. Poisson/Quantum Noise Reduction (edge-preserving spatial filtering)
-5. Post-denoise Quality Metrics (PSNR, SSIM, Edge Preservation Index)
-6. Windowed display preparation
+5. Safety & Quality Output Validation (IEC 62304 / ISO 14971 informed gate)
+6. Post-denoise Quality Metrics (PSNR, SSIM, Edge Preservation Index)
+7. Algorithm Decision Trace & Audit Trail Generation
+8. Windowed display preparation
 """
 
+import time
 from typing import Any, Dict, Optional, Union
 import numpy as np
 import pydicom
@@ -22,6 +25,10 @@ from core.dicom_loader import (
     load_dicom,
 )
 from core.noise_analysis import analyze_noise
+from core.output_validation import (
+    generate_algorithm_decision_trace,
+    validate_pipeline_output,
+)
 from core.periodic_denoise import remove_periodic_noise
 from core.poisson_denoise import denoise_poisson
 from core.quality_metrics import (
@@ -37,27 +44,10 @@ def run_neuroclear_pipeline(
     options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Run the full NeuroClear processing pipeline on a DICOM input or HU array.
-
-    Args:
-        dicom_input: Path to DICOM file, open BytesIO buffer, pydicom.Dataset,
-            or calibrated HU 2D numpy array.
-        options: Optional pipeline configuration dictionary:
-            - 'skip_periodic': bool (default False)
-            - 'skip_poisson': bool (default False)
-            - 'notch_radius': float (default 6.0)
-            - 'notch_filter_type': str ('gaussian' or 'butterworth')
-            - 'poisson_method': str ('nlm', 'bilateral', 'tv', 'wavelet')
-            - 'poisson_strength': float (default 1.0)
-            - 'use_anscombe': bool (default False)
-            - 'window_center': float (default 40.0)
-            - 'window_width': float (default 80.0)
-            - 'ground_truth': Optional 2D numpy array (clean reference for synthetic demos)
-
-    Returns:
-        Comprehensive dictionary of all pipeline intermediate arrays, metadata,
-        noise analyses, and quality metrics.
+    Run the full NeuroClear processing pipeline on a DICOM input or HU array
+    with formal output validation and decision traceability.
     """
+    start_time = time.perf_counter()
     opts = options or {}
     skip_periodic = bool(opts.get("skip_periodic", False))
     skip_poisson = bool(opts.get("skip_poisson", False))
@@ -66,14 +56,15 @@ def run_neuroclear_pipeline(
     poisson_method = str(opts.get("poisson_method", "nlm"))
     poisson_strength = float(opts.get("poisson_strength", 1.0))
     use_anscombe = bool(opts.get("use_anscombe", False))
+    detail_boost = float(opts.get("detail_boost", 1.0))
     w_center = float(opts.get("window_center", 40.0))
     w_width = float(opts.get("window_width", 80.0))
     ground_truth = opts.get("ground_truth", None)
 
-    # 1. Ingestion & HU conversion
+    # 1. Ingestion & HU conversion (Original preservation)
     metadata: Dict[str, Any] = {}
     if isinstance(dicom_input, np.ndarray):
-        hu_original = dicom_input.astype(np.float32)
+        hu_original = np.array(dicom_input, dtype=np.float32, copy=True)
         metadata = {
             "patient_id": "In-Memory Array",
             "modality": "CT",
@@ -110,27 +101,33 @@ def run_neuroclear_pipeline(
 
     # 4. Poisson / Quantum Noise Reduction (Edge-Preserving Filtering)
     if not skip_poisson:
-        detail_boost = float(opts.get("detail_boost", 1.0))
         poisson_params = {
             "method": poisson_method,
             "strength": poisson_strength,
             "use_anscombe": use_anscombe,
             "detail_boost": detail_boost,
         }
-        hu_denoised = denoise_poisson(hu_periodic, params=poisson_params)
+        hu_denoised_raw = denoise_poisson(hu_periodic, params=poisson_params)
     else:
-        hu_denoised = hu_periodic.copy()
+        hu_denoised_raw = hu_periodic.copy()
 
-    # 5. Post-denoise Noise Analysis
+    # 5. Output Validation Gate (IEC 62304 / ISO 14971 Safety Check)
+    validation = validate_pipeline_output(
+        input_hu=hu_original,
+        output_hu=hu_denoised_raw,
+        min_edge_preservation=0.45,
+        max_mean_shift_hu=50.0,
+    )
+    hu_denoised = validation["safe_output_hu"]
+
+    # 6. Post-denoise Noise Analysis & Metrics
     post_noise = analyze_noise(hu_denoised)
-
-    # 6. Quality Metrics
     difference_map = hu_original - hu_denoised
 
     metrics = compute_all_metrics(hu_original, hu_denoised)
-    metrics["edge_preservation"] = metrics["edge_preservation_index"]
+    metrics["edge_preservation"] = validation["edge_preservation"]
 
-    # If clean ground truth is available (e.g. from synthetic phantom), compute improvement metrics
+    # Ground Truth Comparison (Strictly for synthetic benchmark where clean ground truth exists)
     gt_metrics: Optional[Dict[str, Any]] = None
     if ground_truth is not None and ground_truth.shape == hu_original.shape:
         gt = np.asarray(ground_truth, dtype=np.float64)
@@ -148,7 +145,29 @@ def run_neuroclear_pipeline(
             "output_edge_preservation": denoised_gt["edge_preservation_index"],
         }
 
-    # 7. Windowed Display Arrays
+    elapsed_time = time.perf_counter() - start_time
+
+    # 7. Algorithmic Decision Trail & Audit Trail Generation
+    options_applied = {
+        "skip_periodic": skip_periodic,
+        "skip_poisson": skip_poisson,
+        "notch_radius": notch_radius,
+        "notch_filter_type": notch_type,
+        "poisson_method": poisson_method,
+        "poisson_strength": poisson_strength,
+        "use_anscombe": use_anscombe,
+        "detail_boost": detail_boost,
+        "window_center": w_center,
+        "window_width": w_width,
+    }
+    decision_trace = generate_algorithm_decision_trace(
+        noise_analysis=initial_noise,
+        options_applied=options_applied,
+        validation_result=validation,
+        execution_time_seconds=elapsed_time,
+    )
+
+    # 8. Windowed Display Arrays (Display-only copies, original float32 HU preserved)
     display_original = apply_window(hu_original, w_center, w_width, as_uint8=True)
     display_periodic = apply_window(hu_periodic, w_center, w_width, as_uint8=True)
     display_denoised = apply_window(hu_denoised, w_center, w_width, as_uint8=True)
@@ -167,15 +186,9 @@ def run_neuroclear_pipeline(
         "post_noise": post_noise,
         "metrics": metrics,
         "ground_truth_metrics": gt_metrics,
-        "options_applied": {
-            "skip_periodic": skip_periodic,
-            "skip_poisson": skip_poisson,
-            "notch_radius": notch_radius,
-            "notch_type": notch_type,
-            "poisson_method": poisson_method,
-            "poisson_strength": poisson_strength,
-            "use_anscombe": use_anscombe,
-            "window_center": w_center,
-            "window_width": w_width,
-        },
+        "validation": validation,
+        "decision_trace": decision_trace,
+        "options_applied": options_applied,
+        "execution_time_seconds": elapsed_time,
     }
+
