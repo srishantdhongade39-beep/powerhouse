@@ -167,12 +167,17 @@ st.markdown(
 
 def init_session_state() -> None:
     """Initialize application session state variables."""
-    if "volume_hu" not in st.session_state:
+    if "volume_hu" not in st.session_state or not st.session_state.volume_hu:
         st.session_state.volume_hu = []
-    if "volume_clean" not in st.session_state:
         st.session_state.volume_clean = []
-    if "volume_datasets" not in st.session_state:
         st.session_state.volume_datasets = []
+        st.session_state.active_slice_idx = 7
+        st.session_state.processed_cache = {}
+        st.session_state.metadata = None
+        st.session_state.loaded_source_name = None
+        st.session_state.preset_choice = "Brain"
+        st.session_state.noise_analyzed = False
+        load_volumetric_brain_phantom()
     if "active_slice_idx" not in st.session_state:
         st.session_state.active_slice_idx = 0
     if "processed_cache" not in st.session_state:
@@ -185,6 +190,7 @@ def init_session_state() -> None:
         st.session_state.preset_choice = "Brain"
     if "noise_analyzed" not in st.session_state:
         st.session_state.noise_analyzed = False
+
 
 
 def load_volumetric_brain_phantom() -> None:

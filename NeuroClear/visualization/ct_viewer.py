@@ -35,32 +35,44 @@ def render_slice_navigation_bar(
     fast slider scrubber, and slice location indicators.
     """
     if total_slices <= 1:
-        st.caption("Single-slice study loaded.")
+        st.info("ℹ️ Single-slice study loaded (1 of 1). Click **'🧪 3D Volume (16s)'** in the sidebar to load the 16-slice series.")
         return 0
 
-    col_prev, col_slider, col_next, col_info = st.columns([1, 4, 1, 2])
+    st.markdown(
+        """
+        <div style="background: #111827; border: 1px solid #00E5FF; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #00E5FF; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                🩻 Axial CT Slice Navigator (Skull Base → Vertex)
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_prev, col_slider, col_next, col_info = st.columns([1.2, 4, 1.2, 2.2])
 
     with col_prev:
-        if st.button("◀ Prev", key=f"{key_prefix}_prev", use_container_width=True, disabled=(current_index <= 0)):
+        if st.button("◀ Prev Slice", key=f"{key_prefix}_prev", use_container_width=True, disabled=(current_index <= 0)):
             current_index = max(0, current_index - 1)
             st.session_state.active_slice_idx = current_index
             st.rerun()
 
     with col_next:
-        if st.button("Next ▶", key=f"{key_prefix}_next", use_container_width=True, disabled=(current_index >= total_slices - 1)):
+        if st.button("Next Slice ▶", key=f"{key_prefix}_next", use_container_width=True, disabled=(current_index >= total_slices - 1)):
             current_index = min(total_slices - 1, current_index + 1)
             st.session_state.active_slice_idx = current_index
             st.rerun()
 
     with col_slider:
         selected_slice = st.slider(
-            "Scrub Slice",
+            "Scrub Slice (Z-Axis)",
             min_value=1,
             max_value=total_slices,
             value=current_index + 1,
             step=1,
             key=f"{key_prefix}_slider",
             label_visibility="collapsed",
+            help="Drag to rapidly scrub through CT axial slices.",
         )
         if selected_slice - 1 != current_index:
             current_index = selected_slice - 1
@@ -68,9 +80,9 @@ def render_slice_navigation_bar(
             st.rerun()
 
     with col_info:
-        loc_str = f" · Z: `{slice_location_mm:+.1f} mm`" if slice_location_mm is not None else ""
+        loc_str = f"<br><span style='font-size:0.75rem; color:#94A3B8;'>Z-Loc: {slice_location_mm:+.1f} mm</span>" if slice_location_mm is not None else ""
         st.markdown(
-            f"<div style='text-align: right; padding-top: 6px; font-weight: 600; color: #00E5FF; font-family: monospace;'>"
+            f"<div style='text-align: right; font-weight: 700; color: #00E5FF; font-family: monospace; font-size: 1.05rem; padding-top: 4px;'>"
             f"Slice {current_index + 1} / {total_slices}{loc_str}</div>",
             unsafe_allow_html=True,
         )
