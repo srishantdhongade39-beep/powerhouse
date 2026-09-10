@@ -47,6 +47,7 @@ from visualization.ct_viewer import (
 )
 from visualization.difference_map import render_difference_map
 from visualization.fft_view import render_fft_view
+from visualization.model_3d import render_3d_model
 
 # Streamlit Page Config
 st.set_page_config(
@@ -348,7 +349,7 @@ def main() -> None:
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            if st.button("🧪 3D Volume (16s)", use_container_width=True, type="primary"):
+            if st.button("🧪 Demo 16-Slice Brain", use_container_width=True, type="primary"):
                 load_volumetric_brain_phantom()
                 st.rerun()
         with col_s2:
@@ -376,12 +377,12 @@ def main() -> None:
             st.session_state.processed_cache = {}
             st.rerun()
 
-        st.caption("— or upload single/multi-slice DICOM series —")
+        st.caption("— or upload single/multi-slice DICOM series / image —")
         uploaded_files = st.file_uploader(
             "Upload DICOM CT (.dcm) or Images",
             type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
             accept_multiple_files=True,
-            help="Upload one or multiple .dcm slices. NeuroClear automatically organizes slices in anatomical order.",
+            help="Upload one or multiple .dcm slices or image scans. NeuroClear automatically calibrates and reconstructs the study.",
         )
 
         if uploaded_files:
@@ -398,16 +399,18 @@ def main() -> None:
                         st.session_state.active_slice_idx = len(hu_list) // 2
                         st.session_state.metadata = get_dicom_metadata(sorted_ds[0])
                         st.session_state.metadata["total_slices"] = len(hu_list)
-                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.loaded_source_name = f"Uploaded DICOM: {uploaded_files[0].name}" if len(dcm_files) == 1 else f"Uploaded DICOM Series ({len(dcm_files)} Slices)"
                         st.session_state.processed_cache = {}
                         st.success(f"Loaded {len(hu_list)} DICOM slices successfully.")
                         st.rerun()
                     else:
-                        # Image file fallback
+                        # Image file fallback (PNG, JPG, TIFF, etc.)
                         img_file = uploaded_files[0]
                         pil_img = Image.open(img_file).convert("L")
                         arr_gray = np.array(pil_img, dtype=np.float32)
-                        hu = (arr_gray / 255.0) * 1500.0 - 500.0
+                        # Calibrate grayscale [0, 255] into standard clinical brain CT HU space [-100, 300] HU
+                        # where mid-gray (~90) is ~40 HU (Brain tissue), 0 is -100 HU, and 255 is +300 HU
+                        hu = (arr_gray / 255.0) * 400.0 - 100.0
                         raw_ds = create_synthetic_dicom_dataset(
                             hu,
                             patient_id=f"IMG_{img_file.name[:12]}",
@@ -419,9 +422,10 @@ def main() -> None:
                         st.session_state.active_slice_idx = 0
                         st.session_state.metadata = get_dicom_metadata(raw_ds)
                         st.session_state.metadata["total_slices"] = 1
-                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.loaded_source_name = f"Uploaded Image: {img_file.name}"
                         st.session_state.processed_cache = {}
-                        st.session_state.preset_choice = "Bone"
+                        st.session_state.preset_choice = "Brain"
+                        st.session_state.profile_choice_idx = 1
                         st.success(f"Loaded image {img_file.name} as calibrated CT slice.")
                         st.rerun()
                 except Exception as ex:
@@ -599,7 +603,7 @@ def main() -> None:
     # Process slice pipeline if requested or not yet cached
     cache_key = f"slice_{active_idx}_{window_center}_{window_width}_{enable_periodic}_{enable_poisson}_{poisson_method}_{poisson_strength}_{detail_boost}_{use_anscombe}_{inject_noise}"
 
-    if run_btn or analyze_btn or (active_idx not in st.session_state.processed_cache):
+    if run_btn or analyze_btn or (cache_key not in st.session_state.processed_cache):
         pipeline_opts = {
             "skip_periodic": not enable_periodic,
             "skip_poisson": not enable_poisson,
@@ -616,9 +620,9 @@ def main() -> None:
         }
         with st.spinner(f"Processing Slice {active_idx + 1}/{total_slices} through NeuroClear pipeline..."):
             res = run_neuroclear_pipeline(hu_slice, pipeline_opts)
-            st.session_state.processed_cache[active_idx] = res
+            st.session_state.processed_cache[cache_key] = res
 
-    results = st.session_state.processed_cache.get(active_idx, {})
+    results = st.session_state.processed_cache.get(cache_key, {})
 
     # Extract pipeline arrays
     denoised_hu = results.get("hu_denoised", hu_slice)
@@ -691,11 +695,12 @@ def main() -> None:
     )
 
     # ------------------ WORKSTATION TABS ------------------
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "👁️ Medical CT Viewer",
         "🌐 Frequency Spectrum (FFT)",
         "🔬 Difference & Residual Map",
         "🔍 Pixel & HU Inspector",
+        "🧊 3D Anatomical Model",
         "📋 DICOM Metadata & Physics",
         "🛡️ Standards & Safety",
         "💾 Medical Export",
@@ -798,6 +803,16 @@ def main() -> None:
             render_interactive_hu_inspector(clean_ref, title="Interactive Clean Reference HU Inspector", pixel_spacing_mm=pixel_spacing)
 
     with tab5:
+        render_3d_model(
+            volume_hu=volume_hu,
+            active_slice_idx=active_idx,
+            window_center=window_center,
+            window_width=window_width,
+            source_name=st.session_state.loaded_source_name,
+            denoised_hu=denoised_hu,
+        )
+
+    with tab6:
         st.markdown("#### 📑 Technical DICOM Metadata")
         meta = st.session_state.metadata or {}
         col_m1, col_m2 = st.columns(2)
@@ -832,6 +847,7 @@ def main() -> None:
             """
         )
 
+<<<<<<< HEAD
     with tab6:
         st.markdown("### 🛡️ Standards, Safety & Quality Management System")
         st.caption("Standards-informed framework incorporating IEC 62304, ISO 14971, IEC 62366-1, and IEC 60601-1 principles for medical software prototypes.")
@@ -914,8 +930,7 @@ def main() -> None:
             > IEC 60601-1 physical and electrical safety specifications are maintained by the primary diagnostic scanner modality manufacturer.
             """
         )
-
-    with tab7:
+    with tab8:
         st.markdown("#### 💾 Export Processed Results")
         exp1, exp2, exp3 = st.columns(3)
 

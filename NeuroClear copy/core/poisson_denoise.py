@@ -16,12 +16,32 @@ Implements edge-preserving classical algorithms:
 from typing import Any, Dict, Optional
 import cv2
 import numpy as np
+from scipy import ndimage
 from skimage.restoration import (
     denoise_nl_means,
     denoise_tv_chambolle,
     denoise_wavelet,
-    estimate_sigma,
 )
+
+
+def _robust_estimate_sigma(image: np.ndarray) -> float:
+    """
+    Robust edge-insensitive noise standard deviation estimator (Immerkaer / Donoho).
+    Convolves with high-frequency 3x3 Laplacian operator:
+      [ 1, -2,  1]
+      [-2,  4, -2]
+      [ 1, -2,  1]
+    and computes Median Absolute Deviation (MAD) / (0.6745 * 6.0).
+    Captures high-frequency Poisson/quantum fluctuations while median rejects edge boundaries.
+    """
+    img = np.asarray(image, dtype=np.float32)
+    if img.ndim != 2 or img.shape[0] < 5 or img.shape[1] < 5:
+        return 0.03
+    kernel = np.array([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=np.float32)
+    filtered = ndimage.convolve(img, kernel, mode="reflect")
+    mad = float(np.median(np.abs(filtered)))
+    sigma_est = float(mad / (0.6745 * 6.0))
+    return max(0.008, sigma_est)
 
 
 def _anscombe_transform(x: np.ndarray) -> np.ndarray:
@@ -80,14 +100,16 @@ def denoise_poisson(
     else:
         filter_input = norm_img.astype(np.float32)
 
+    # Estimate noise standard deviation in normalized space via robust Laplacian MAD
+    sigma_est = _robust_estimate_sigma(filter_input)
+
     # Dispatch to edge-preserving filter
     if method == "bilateral":
-        # OpenCV bilateralFilter expects float32 or uint8
-        # d: diameter of pixel neighborhood
-        # Calibrated to preserve fine bone trabeculae and sharp interfaces
+        # OpenCV bilateralFilter expects float32
+        # d: diameter of pixel neighborhood calibrated to preserve fine bone trabeculae and sharp interfaces
         d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
-        sigma_color = float(np.clip(0.035 * strength, 0.008, 0.18))
-        sigma_space = float(np.clip(2.0 * strength, 1.0, 7.0))
+        sigma_color = float(np.clip(1.30 * strength * sigma_est, 0.035, 0.35))
+        sigma_space = float(np.clip(3.0 * strength, 2.0, 9.0))
         denoised_norm = cv2.bilateralFilter(
             filter_input,
             d=d,
@@ -98,8 +120,7 @@ def denoise_poisson(
 
     elif method == "tv":
         # Total Variation Chambolle denoising
-        # Reduced weight to eliminate staircasing / plastic appearance
-        tv_weight = float(np.clip(0.018 * strength, 0.002, 0.12))
+        tv_weight = float(np.clip(0.18 * strength * sigma_est, 0.01, 0.22))
         denoised_norm = denoise_tv_chambolle(
             filter_input,
             weight=tv_weight,
@@ -119,8 +140,8 @@ def denoise_poisson(
         except (ImportError, ModuleNotFoundError):
             # Fallback to edge-preserving bilateral filter when PyWavelets is not installed
             d = int(np.clip(3 + 2 * int(strength * 2), 3, 9))
-            sigma_color = float(np.clip(0.035 * strength, 0.008, 0.18))
-            sigma_space = float(np.clip(2.0 * strength, 1.0, 7.0))
+            sigma_color = float(np.clip(1.30 * strength * sigma_est, 0.035, 0.35))
+            sigma_space = float(np.clip(3.0 * strength, 2.0, 9.0))
             denoised_norm = cv2.bilateralFilter(
                 filter_input,
                 d=d,
@@ -131,14 +152,8 @@ def denoise_poisson(
 
     else:
         # Default: Non-Local Means (NLM)
-        # Calibrated for high-fidelity CT texture and trabecular bone retention
-        try:
-            sigma_est = float(np.mean(estimate_sigma(filter_input)))
-        except Exception:
-            sigma_est = 0.02
-
-        # h parameter: 0.60 * sigma preserves fine architectural textures
-        h_param = max(0.005, 0.60 * strength * max(sigma_est, 0.012))
+        # Calibrated with robust Immerkaer sigma estimation for high-fidelity CT texture retention
+        h_param = max(0.015, 0.95 * strength * sigma_est)
         denoised_norm = denoise_nl_means(
             filter_input,
             h=h_param,
@@ -147,16 +162,23 @@ def denoise_poisson(
             patch_distance=5,
         )
 
-    # Classical Multi-Scale Detail Preservation & Adaptive Edge Boost
+    # Classical Multi-Scale Detail Preservation & Natural Texture Retention
     detail_boost = max(1.0, float(p.get("detail_boost", 1.0)))
+    texture_blend = float(np.clip(p.get("texture_blend", 0.10), 0.0, 0.35))
+
+    # Extract high-frequency micro-texture residual layer
+    texture_residual = filter_input - denoised_norm
+
     if detail_boost > 1.001:
-        # Extract classical high-frequency detail layer D = Input - Base
-        detail = filter_input - denoised_norm
-        # Apply soft coring threshold to extinguish quantum noise fluctuations
-        coring_tau = float(np.clip(0.012 * strength, 0.003, 0.05))
-        detail_clean = np.sign(detail) * np.maximum(0.0, np.abs(detail) - coring_tau)
-        # Boost true anatomical micro-structures (trabeculae, cortices)
+        # Apply soft coring threshold calibrated to noise sigma to isolate anatomical structures from photon fluctuations
+        coring_tau = float(np.clip(0.65 * strength * sigma_est, 0.005, 0.08))
+        detail_clean = np.sign(texture_residual) * np.maximum(0.0, np.abs(texture_residual) - coring_tau)
+        # Boost true anatomical micro-structures (sulci, gyri, trabeculae, cortices)
         denoised_norm = np.clip(denoised_norm + (detail_boost - 1.0) * detail_clean, 0.0, 1.0)
+
+    # Blend subtle natural texture to preserve realistic clinical CT parenchyma appearance (prevents plastic/waxy artifact)
+    if texture_blend > 0.001:
+        denoised_norm = np.clip(denoised_norm + (texture_blend * texture_residual), 0.0, 1.0)
 
     # Invert Anscombe transform if applied
     if use_anscombe:

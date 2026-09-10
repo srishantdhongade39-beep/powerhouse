@@ -47,6 +47,7 @@ from visualization.ct_viewer import (
 )
 from visualization.difference_map import render_difference_map
 from visualization.fft_view import render_fft_view
+from visualization.model_3d import render_3d_model
 
 # Streamlit Page Config
 st.set_page_config(
@@ -289,11 +290,11 @@ def main() -> None:
         """
         <div class="workstation-header">
             <div>
-                <div class="brand-title">🧠 NeuroClear <span style="font-size:1.1rem; color:#00E5FF; font-weight:600;">Workstation</span></div>
-                <div class="brand-subtitle">SEC086 · Adaptive Brain CT Denoising Engine &amp; Clinical DICOM Workstation</div>
+                <div class="brand-title">🧠 NeuroClear <span style="font-size:1.1rem; color:#00E5FF; font-weight:600;">Workstation</span> <span style="font-size:0.8rem; background:#1E293B; color:#38BDF8; padding:3px 8px; border-radius:4px; border:1px solid #0284C7;">v0.1.0</span></div>
+                <div class="brand-subtitle">Adaptive Brain CT Denoising Engine &amp; Clinical DICOM Workstation · IEC 62304 &amp; ISO 14971-Informed Architecture</div>
             </div>
             <div style="text-align: right;">
-                <div class="disclaimer-badge">⚠️ Non-Clinical Research Prototype · SEC086</div>
+                <div class="disclaimer-badge">🛡️ IEC 62304 / ISO 14971 Prototype · Non-Clinical Research Device</div>
             </div>
         </div>
         """,
@@ -306,7 +307,7 @@ def main() -> None:
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            if st.button("🧪 3D Volume (16s)", use_container_width=True, type="primary"):
+            if st.button("🧪 Demo 16-Slice Brain", use_container_width=True, type="primary"):
                 load_volumetric_brain_phantom()
                 st.rerun()
         with col_s2:
@@ -334,12 +335,12 @@ def main() -> None:
             st.session_state.processed_cache = {}
             st.rerun()
 
-        st.caption("— or upload single/multi-slice DICOM series —")
+        st.caption("— or upload single/multi-slice DICOM series / image —")
         uploaded_files = st.file_uploader(
             "Upload DICOM CT (.dcm) or Images",
             type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
             accept_multiple_files=True,
-            help="Upload one or multiple .dcm slices. NeuroClear automatically organizes slices in anatomical order.",
+            help="Upload one or multiple .dcm slices or image scans. NeuroClear automatically calibrates and reconstructs the study.",
         )
 
         if uploaded_files:
@@ -356,16 +357,18 @@ def main() -> None:
                         st.session_state.active_slice_idx = len(hu_list) // 2
                         st.session_state.metadata = get_dicom_metadata(sorted_ds[0])
                         st.session_state.metadata["total_slices"] = len(hu_list)
-                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.loaded_source_name = f"Uploaded DICOM: {uploaded_files[0].name}" if len(dcm_files) == 1 else f"Uploaded DICOM Series ({len(dcm_files)} Slices)"
                         st.session_state.processed_cache = {}
                         st.success(f"Loaded {len(hu_list)} DICOM slices successfully.")
                         st.rerun()
                     else:
-                        # Image file fallback
+                        # Image file fallback (PNG, JPG, TIFF, etc.)
                         img_file = uploaded_files[0]
                         pil_img = Image.open(img_file).convert("L")
                         arr_gray = np.array(pil_img, dtype=np.float32)
-                        hu = (arr_gray / 255.0) * 1500.0 - 500.0
+                        # Calibrate grayscale [0, 255] into standard clinical brain CT HU space [-100, 300] HU
+                        # where mid-gray (~90) is ~40 HU (Brain tissue), 0 is -100 HU, and 255 is +300 HU
+                        hu = (arr_gray / 255.0) * 400.0 - 100.0
                         raw_ds = create_synthetic_dicom_dataset(
                             hu,
                             patient_id=f"IMG_{img_file.name[:12]}",
@@ -377,9 +380,10 @@ def main() -> None:
                         st.session_state.active_slice_idx = 0
                         st.session_state.metadata = get_dicom_metadata(raw_ds)
                         st.session_state.metadata["total_slices"] = 1
-                        st.session_state.loaded_source_name = upload_key
+                        st.session_state.loaded_source_name = f"Uploaded Image: {img_file.name}"
                         st.session_state.processed_cache = {}
-                        st.session_state.preset_choice = "Bone"
+                        st.session_state.preset_choice = "Brain"
+                        st.session_state.profile_choice_idx = 1
                         st.success(f"Loaded image {img_file.name} as calibrated CT slice.")
                         st.rerun()
                 except Exception as ex:
@@ -557,7 +561,7 @@ def main() -> None:
     # Process slice pipeline if requested or not yet cached
     cache_key = f"slice_{active_idx}_{window_center}_{window_width}_{enable_periodic}_{enable_poisson}_{poisson_method}_{poisson_strength}_{detail_boost}_{use_anscombe}_{inject_noise}"
 
-    if run_btn or analyze_btn or (active_idx not in st.session_state.processed_cache):
+    if run_btn or analyze_btn or (cache_key not in st.session_state.processed_cache):
         pipeline_opts = {
             "skip_periodic": not enable_periodic,
             "skip_poisson": not enable_poisson,
@@ -574,9 +578,9 @@ def main() -> None:
         }
         with st.spinner(f"Processing Slice {active_idx + 1}/{total_slices} through NeuroClear pipeline..."):
             res = run_neuroclear_pipeline(hu_slice, pipeline_opts)
-            st.session_state.processed_cache[active_idx] = res
+            st.session_state.processed_cache[cache_key] = res
 
-    results = st.session_state.processed_cache.get(active_idx, {})
+    results = st.session_state.processed_cache.get(cache_key, {})
 
     # Extract pipeline arrays
     denoised_hu = results.get("hu_denoised", hu_slice)
@@ -649,12 +653,14 @@ def main() -> None:
     )
 
     # ------------------ WORKSTATION TABS ------------------
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "👁️ Medical CT Viewer",
         "🌐 Frequency Spectrum (FFT)",
         "🔬 Difference & Residual Map",
         "🔍 Pixel & HU Inspector",
+        "🧊 3D Anatomical Model",
         "📋 DICOM Metadata & Physics",
+        "🛡️ Standards & Safety",
         "💾 Medical Export",
     ])
 
@@ -669,9 +675,43 @@ def main() -> None:
             window_width=window_width,
             slice_index=active_idx,
             total_slices=total_slices,
-            title_left="Original CT Slice",
-            title_right=f"NeuroClear Output ({poisson_method.upper()}{notch_badge})",
+            title_left="ORIGINAL CT (Raw / Unprocessed)",
+            title_right=f"NEUROCLEAR PROCESSED CT ({poisson_method.upper()}{notch_badge})",
         )
+
+        # Live Algorithm Decision Trace & Safety Telemetry (IEC 62304 / ISO 14971)
+        trace = results.get("decision_trace", {})
+        val_res = results.get("validation_results", {})
+        if trace:
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("🛡️ ALGORITHM DECISION TRACE & SAFETY TELEMETRY (IEC 62304 / ISO 14971)", expanded=False):
+                st.markdown(
+                    f"<div style='background:#111827; border:1px solid #1E293B; border-radius:6px; padding:12px; margin-bottom:10px;'>"
+                    f"<span style='color:#00E5FF; font-weight:700;'>Telemetry Summary:</span> "
+                    f"Pipeline Version <code>{trace.get('version', 'v0.1.0')}</code> · Status: <b>{trace.get('status', 'SUCCESS')}</b> · "
+                    f"Execution Time: <code>{trace.get('execution_time_ms', 0):.2f} ms</code> · Fallback Applied: <code>{trace.get('fallback_applied', False)}</code>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                col_tr1, col_tr2, col_tr3 = st.columns(3)
+                with col_tr1:
+                    st.markdown(f"• **Method Requested**: `{trace.get('method_selected', poisson_method)}`")
+                    st.markdown(f"• **Periodic Filter**: `{'Enabled' if trace.get('periodic_filter_applied') else 'Bypassed'}`")
+                    st.markdown(f"• **Poisson Filter**: `{'Enabled' if trace.get('poisson_filter_applied') else 'Bypassed'}`")
+                with col_tr2:
+                    st.markdown(f"• **Input Shape**: `{trace.get('input_shape')}`")
+                    st.markdown(f"• **Output Shape**: `{trace.get('output_shape')}`")
+                    st.markdown(f"• **Mean HU Baseline Shift**: `{trace.get('mean_shift_hu', 0.0):+.3f} HU`")
+                with col_tr3:
+                    st.markdown(f"• **Edge Preservation Index (ρ)**: `{trace.get('edge_preservation_index', 1.0):.3f}`")
+                    st.markdown(f"• **Validation Gate Status**: `{'PASSED ✅' if trace.get('validation_passed') else 'FALLBACK ACTIVE ⚠️'}`")
+                    st.markdown(f"• **Timestamp**: `{trace.get('timestamp')}`")
+
+                if val_res.get("checks"):
+                    st.markdown("##### 🔬 Automated Output Validation Checklist")
+                    for chk in val_res["checks"]:
+                        icon = "✅" if chk.get("passed") else "⚠️"
+                        st.markdown(f"{icon} **{chk.get('name')}**: {chk.get('details')}")
 
     with tab2:
         render_fft_view(
@@ -721,6 +761,16 @@ def main() -> None:
             render_interactive_hu_inspector(clean_ref, title="Interactive Clean Reference HU Inspector", pixel_spacing_mm=pixel_spacing)
 
     with tab5:
+        render_3d_model(
+            volume_hu=volume_hu,
+            active_slice_idx=active_idx,
+            window_center=window_center,
+            window_width=window_width,
+            source_name=st.session_state.loaded_source_name,
+            denoised_hu=denoised_hu,
+        )
+
+    with tab6:
         st.markdown("#### 📑 Technical DICOM Metadata")
         meta = st.session_state.metadata or {}
         col_m1, col_m2 = st.columns(2)
@@ -755,7 +805,90 @@ def main() -> None:
             """
         )
 
+<<<<<<< HEAD
     with tab6:
+        st.markdown("### 🛡️ Standards, Safety & Quality Management System")
+        st.caption("Standards-informed framework incorporating IEC 62304, ISO 14971, IEC 62366-1, and IEC 60601-1 principles for medical software prototypes.")
+
+        st.info(
+            "ℹ️ **Regulatory Notice:** NeuroClear is an academic and engineering research prototype developed "
+            "under standards-informed software lifecycle and risk management principles. It is not FDA 510(k) cleared, "
+            "CE marked, or intended for primary diagnostic clinical interpretation."
+        )
+
+        std_overview1, std_overview2 = st.columns(2)
+        with std_overview1:
+            st.markdown(
+                """
+                <div style="background:#111827; border:1px solid #1E293B; border-radius:8px; padding:14px; margin-bottom:12px;">
+                    <div style="color:#00E5FF; font-weight:700; margin-bottom:6px;">📋 IEC 62304: Software Lifecycle</div>
+                    <p style="font-size:0.85rem; color:#CBD5E1; margin:0;">
+                        Defines rigorous software requirements traceability, automated unit testing, module modularity, 
+                        and version control. All requirements (SYS-001 through SYS-010) map directly to active code modules and unit tests.
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with std_overview2:
+            st.markdown(
+                """
+                <div style="background:#111827; border:1px solid #1E293B; border-radius:8px; padding:14px; margin-bottom:12px;">
+                    <div style="color:#10B981; font-weight:700; margin-bottom:6px;">⚠️ ISO 14971: Risk Management</div>
+                    <p style="font-size:0.85rem; color:#CBD5E1; margin:0;">
+                        Structured hazard identification and software safety mitigations (R-001 through R-012) covering DICOM parsing, 
+                        HU drift, anatomical edge erosion, numerical exceptions, and difference map misinterpretation.
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("---")
+        st.markdown("#### 1. ISO 14971 Risk Analysis & Software Controls Matrix")
+        risk_table_data = [
+            {"Risk ID": "R-001", "Hazard / Failure Mode": "Corrupted DICOM file byte stream", "Initial Risk": "Med", "Safety Mitigation & Control": "Validate DICM preamble, try-catch handlers, user alert", "Post-Risk": "Low"},
+            {"Risk ID": "R-002", "Hazard / Failure Mode": "Missing Rescale Slope/Intercept", "Initial Risk": "High", "Safety Mitigation & Control": "Safe default fallback (slope=1.0, intercept=0.0) with warning", "Post-Risk": "Low"},
+            {"Risk ID": "R-003", "Hazard / Failure Mode": "Excessive spatial smoothing", "Initial Risk": "High", "Safety Mitigation & Control": "Constrained sigma bounds; EPI threshold (ρ ≥ 0.45) validation gate", "Post-Risk": "Low"},
+            {"Risk ID": "R-004", "Hazard / Failure Mode": "DTCWT thresholding eroding lesions", "Initial Risk": "High", "Safety Mitigation & Control": "Directional sub-band thresholding with energy preservation", "Post-Risk": "Low"},
+            {"Risk ID": "R-005", "Hazard / Failure Mode": "Total Variation staircasing", "Initial Risk": "High", "Safety Mitigation & Control": "Bounded TV lambda (≤0.15), Split-Bregman stopping criteria", "Post-Risk": "Low"},
+            {"Risk ID": "R-006", "Hazard / Failure Mode": "FFT DC-offset baseline shift", "Initial Risk": "High", "Safety Mitigation & Control": "Hard-pinned DC component; validation checks mean drift < 5 HU", "Post-Risk": "Low"},
+            {"Risk ID": "R-007", "Hazard / Failure Mode": "Floating point NaN / Inf generation", "Initial Risk": "Med", "Safety Mitigation & Control": "Automated NaN/Inf gate in validate_pipeline_output()", "Post-Risk": "Low"},
+            {"Risk ID": "R-008", "Hazard / Failure Mode": "Overwriting raw DICOM buffer in memory", "Initial Risk": "High", "Safety Mitigation & Control": "Immutable np.copy(raw_hu) clone at entrypoint", "Post-Risk": "Low"},
+            {"Risk ID": "R-009", "Hazard / Failure Mode": "Misinterpreting PSNR without Ground Truth", "Initial Risk": "High", "Safety Mitigation & Control": "Mark 'N/A' for clinical scans without reference image", "Post-Risk": "Low"},
+            {"Risk ID": "R-010", "Hazard / Failure Mode": "Difference map misread as pathology", "Initial Risk": "High", "Safety Mitigation & Control": "Standard label 'REMOVED SIGNAL / DIFFERENCE MAP' + advisory", "Post-Risk": "Low"},
+            {"Risk ID": "R-011", "Hazard / Failure Mode": "Evaluating denoised without raw CT", "Initial Risk": "High", "Safety Mitigation & Control": "Synchronized dual-viewport with clear ORIGINAL CT badge", "Post-Risk": "Low"},
+            {"Risk ID": "R-012", "Hazard / Failure Mode": "Pipeline numerical crash during processing", "Initial Risk": "Med", "Safety Mitigation & Control": "Safe fallback mechanism restores original slice with log", "Post-Risk": "Low"},
+        ]
+        st.dataframe(risk_table_data, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("#### 2. IEC 62304 Requirements Traceability Matrix")
+        req_table_data = [
+            {"Req ID": "SYS-001", "Description": "DICOM Ingestion & Parsing", "Module": "core/dicom_loader.py", "Test Case": "test_dicom_loader", "Status": "Verified ✅"},
+            {"Req ID": "SYS-002", "Description": "Hounsfield Unit (HU) Calibration", "Module": "core/dicom_loader.py", "Test Case": "test_hu_calibration", "Status": "Verified ✅"},
+            {"Req ID": "SYS-003", "Description": "Adaptive Bilateral Edge-Preserving Filter", "Module": "core/bilateral.py", "Test Case": "test_bilateral_filter", "Status": "Verified ✅"},
+            {"Req ID": "SYS-004", "Description": "DTCWT Multi-Scale Denoising", "Module": "core/wavelet.py", "Test Case": "test_wavelet_denoising", "Status": "Verified ✅"},
+            {"Req ID": "SYS-005", "Description": "Total Variation Regularization", "Module": "core/total_variation.py", "Test Case": "test_tv_denoising", "Status": "Verified ✅"},
+            {"Req ID": "SYS-006", "Description": "FFT Notch Frequency Filtering", "Module": "core/fft_filter.py", "Test Case": "test_fft_filter", "Status": "Verified ✅"},
+            {"Req ID": "SYS-007", "Description": "Pipeline Output Validation Gate", "Module": "core/output_validation.py", "Test Case": "test_output_validation_gate", "Status": "Verified ✅"},
+            {"Req ID": "SYS-008", "Description": "Usability HUD & Standard Labeling", "Module": "visualization/ct_viewer.py", "Test Case": "test_visualization_labels", "Status": "Verified ✅"},
+            {"Req ID": "SYS-009", "Description": "Quality Metrics & Reference-Free CNR", "Module": "core/metrics.py", "Test Case": "test_metrics_calculation", "Status": "Verified ✅"},
+            {"Req ID": "SYS-010", "Description": "Safe Fallback & Error Containment", "Module": "core/pipeline.py", "Test Case": "test_safe_fallback_mechanism", "Status": "Verified ✅"},
+        ]
+        st.dataframe(req_table_data, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("#### 3. IEC 60601-1 Safety Context Reference Statement")
+        st.markdown(
+            """
+            > **Hardware Context Notice:**  
+            > NeuroClear is a standalone post-processing software application operating on off-the-shelf workstation hardware. 
+            > It does not interface directly with physical CT scanner electronics, high-voltage generators, gantry rotation controllers, or patient-contacting medical sensors.  
+            > IEC 60601-1 physical and electrical safety specifications are maintained by the primary diagnostic scanner modality manufacturer.
+            """
+        )
+    with tab8:
         st.markdown("#### 💾 Export Processed Results")
         exp1, exp2, exp3 = st.columns(3)
 
@@ -795,9 +928,11 @@ def main() -> None:
 
         with exp3:
             report_data = {
-                "neuroclear_version": "SEC086-Workstation",
+                "neuroclear_version": "v0.1.0-prototype",
+                "standards_framework": "IEC 62304 / ISO 14971-Informed",
                 "slice_index": active_idx + 1,
                 "total_slices": total_slices,
+                "decision_trace": results.get("decision_trace", {}),
                 "metrics": {
                     "psnr_db": float(metrics.get("psnr_db", 0.0)),
                     "ssim": float(metrics.get("ssim", 0.0)),
@@ -821,7 +956,7 @@ def main() -> None:
             )
 
     st.markdown("---")
-    st.caption("NeuroClear Medical DICOM Workstation · SEC086 · 100% Local Signal Processing · Non-Clinical Research Prototype")
+    st.caption("NeuroClear Medical DICOM Workstation · v0.1.0 · 100% Local Signal Processing · Non-Clinical Research Prototype")
 
 
 if __name__ == "__main__":
