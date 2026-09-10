@@ -111,9 +111,10 @@ def render_fft_view(
         st.plotly_chart(fig, use_container_width=True)
 
         if peaks:
-            st.success(f"**{len(peaks)} periodic frequency spike pairs detected** away from DC baseline.")
+            st.warning(f"⚠️ **{len(peaks)} Periodic Hardware Spike Pair(s) Detected** (Gantry vibration / power harmonics active).")
         else:
-            st.info("No anomalous periodic frequency peaks detected above threshold.")
+            st.success("✅ **Nominal Scanner Frequency Profile (0 Periodic Harmonics Detected)**")
+            st.caption("Standard clinical diagnostic scans do not suffer from motor vibration harmonics. Spatial quantum photon noise reduction is actively processed by the edge-preserving engine.")
 
     with col2:
         st.markdown("##### 🛡️ Frequency Notch Reject Mask H(u, v)")
@@ -137,7 +138,10 @@ def render_fft_view(
                 yaxis=dict(showgrid=False, zeroline=False, autorange="reversed"),
             )
             st.plotly_chart(mask_fig, use_container_width=True)
-            st.caption("Notch filter smoothly zeroes out detected artifact spike coordinates while passing 100% of anatomical frequency spectrum.")
+            if peaks:
+                st.caption("Notch filter zeroes out detected hardware vibration spike coordinates while preserving 100% of anatomical frequency spectrum.")
+            else:
+                st.caption("Pass-Through Mask (1.0 across all frequencies): Full anatomical spectrum is preserved without frequency attenuation.")
         else:
             st.info("Run the denoising pipeline to generate the notch reject filter mask.")
 
