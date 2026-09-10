@@ -6,7 +6,7 @@ identified in the frequency domain via adaptive notch filtering
 (Gaussian or Butterworth notch reject filters).
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 

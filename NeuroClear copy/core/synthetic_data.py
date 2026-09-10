@@ -11,7 +11,7 @@ Provides an immediate, self-contained test slice for evaluation and live demos.
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pydicom
-from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
 
@@ -194,9 +194,9 @@ def create_synthetic_dicom_dataset(
 def generate_brain_ct_volume(
     num_slices: int = 16,
     size: int = 256,
-    add_periodic_artifact: bool = True,
+    add_periodic_artifact: bool = False,
     add_poisson_noise: bool = True,
-    poisson_photon_count: float = 1200.0,
+    poisson_photon_count: float = 1600.0,
     random_seed: Optional[int] = 42,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], List[pydicom.Dataset]]:
     """

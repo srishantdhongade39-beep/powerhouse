@@ -10,18 +10,15 @@ import numpy as np
 import pytest
 
 from core.dicom_loader import (
-    WINDOW_PRESETS,
     apply_window,
     convert_to_hounsfield_units,
     get_dicom_metadata,
 )
 from core.noise_analysis import (
-    analyze_noise,
     detect_periodic_noise,
     estimate_poisson_noise,
 )
 from core.periodic_denoise import (
-    create_notch_filter,
     remove_periodic_noise,
 )
 from core.pipeline import run_neuroclear_pipeline

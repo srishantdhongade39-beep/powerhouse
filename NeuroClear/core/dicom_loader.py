@@ -8,7 +8,7 @@ and applying display windowing.
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import pydicom
 

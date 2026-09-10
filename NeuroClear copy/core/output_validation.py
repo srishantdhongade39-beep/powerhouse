@@ -6,7 +6,7 @@ Performs quantitative data integrity, dimensional consistency, and structural pr
 before displaying or exporting processed CT slices.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from core.quality_metrics import calculate_edge_preservation

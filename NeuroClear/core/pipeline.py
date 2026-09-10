@@ -18,7 +18,6 @@ import numpy as np
 import pydicom
 
 from core.dicom_loader import (
-    WINDOW_PRESETS,
     apply_window,
     convert_to_hounsfield_units,
     get_dicom_metadata,
@@ -31,12 +30,7 @@ from core.output_validation import (
 )
 from core.periodic_denoise import remove_periodic_noise
 from core.poisson_denoise import denoise_poisson
-from core.quality_metrics import (
-    calculate_edge_preservation,
-    calculate_psnr,
-    calculate_ssim,
-    compute_all_metrics,
-)
+from core.quality_metrics import compute_all_metrics
 
 
 def run_neuroclear_pipeline(

@@ -6,9 +6,8 @@ Displays the power spectrum with detected periodic noise peaks highlighted
 and overlays the corresponding notch filter reject mask.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -44,7 +43,6 @@ def render_fft_view(
 
     peaks = noise_info.get("peaks", [])
     h, w = log_mag.shape
-    cr, cc = h // 2, w // 2
 
     col1, col2 = st.columns([1.2, 1.0])
 

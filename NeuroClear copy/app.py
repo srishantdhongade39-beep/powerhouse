@@ -11,16 +11,11 @@ from io import BytesIO
 import json
 from pathlib import Path
 import time
-from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
-import pandas as pd
 from PIL import Image
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import base64
-import pydicom
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -31,18 +26,8 @@ from core.dicom_loader import (
     get_dicom_metadata,
     load_dicom,
     load_dicom_files_list,
-    sort_dicom_slices,
 )
-from core.noise_analysis import analyze_noise, detect_periodic_noise, estimate_poisson_noise
-from core.periodic_denoise import create_notch_filter, remove_periodic_noise
 from core.pipeline import run_neuroclear_pipeline
-from core.poisson_denoise import denoise_poisson
-from core.quality_metrics import (
-    calculate_edge_preservation,
-    calculate_psnr,
-    calculate_ssim,
-    compute_all_metrics,
-)
 from core.synthetic_data import (
     create_synthetic_dicom_dataset,
     generate_brain_ct_phantom,
@@ -747,15 +732,6 @@ def main() -> None:
     wc = float(st.session_state.window_center)
     ww = float(st.session_state.window_width)
 
-    # Active dataset object & slice location
-    active_ds = st.session_state.volume_datasets[active_idx] if active_idx < len(st.session_state.volume_datasets) else None
-    slice_loc = None
-    if active_ds and hasattr(active_ds, "SliceLocation") and active_ds.SliceLocation is not None:
-        try:
-            slice_loc = float(active_ds.SliceLocation)
-        except Exception:
-            slice_loc = None
-
     # Deterministic CT Restoration Pipeline Execution & Caching
     t0 = time.time()
     cache_key = f"{active_idx}_{wc}_{ww}_{st.session_state.enable_periodic}_{st.session_state.notch_radius}_{st.session_state.notch_type}_{st.session_state.poisson_method}_{st.session_state.poisson_strength}_{st.session_state.detail_boost}_{st.session_state.use_anscombe}"
@@ -784,7 +760,6 @@ def main() -> None:
     metrics = results.get("metrics", {})
     gt_metrics = results.get("ground_truth_metrics", None)
     initial_noise = results.get("initial_noise", {})
-    post_noise = results.get("post_noise", {})
     validation = results.get("validation", {})
 
     # Computed Property Metrics
@@ -794,7 +769,6 @@ def main() -> None:
 
     # Automated Noise Screening Diagnostic Extraction
     periodic_info = initial_noise.get("periodic", {})
-    p_detected = periodic_info.get("detected", False)
     p_peaks = periodic_info.get("peak_count", 0)
 
     poisson_info = initial_noise.get("poisson", {})
@@ -1038,8 +1012,8 @@ def main() -> None:
             )
         with canvas_h2:
             st.markdown(
-                f"<div style='text-align:center; font-weight:700; color:#94A3B8; font-size:0.85rem; padding-top:6px;'>"
-                f"<span style='color:#EF4444;'>Original</span> &nbsp; · &nbsp; <span style='color:#10B981;'>NeuroClear Denoised</span></div>",
+                "<div style='text-align:center; font-weight:700; color:#94A3B8; font-size:0.85rem; padding-top:6px;'>"
+                "<span style='color:#EF4444;'>Original</span> &nbsp; · &nbsp; <span style='color:#10B981;'>NeuroClear Denoised</span></div>",
                 unsafe_allow_html=True,
             )
         with canvas_h3:

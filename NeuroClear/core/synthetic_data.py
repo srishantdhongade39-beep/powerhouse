@@ -11,7 +11,7 @@ Provides an immediate, self-contained test slice for evaluation and live demos.
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pydicom
-from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
 

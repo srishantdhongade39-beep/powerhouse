@@ -11,7 +11,7 @@ Responsible for quantifying CT denoising quality:
 from typing import Any, Dict, Optional
 import cv2
 import numpy as np
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+from skimage.metrics import structural_similarity
 
 
 def _ensure_float_array(arr: np.ndarray) -> np.ndarray:

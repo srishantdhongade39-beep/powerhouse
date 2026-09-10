@@ -7,7 +7,7 @@ general noise statistics, periodic/structured scanner artifacts
 noise estimation.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 import numpy as np
 from scipy import ndimage
 
