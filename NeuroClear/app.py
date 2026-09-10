@@ -171,27 +171,45 @@ def main() -> None:
                 st.session_state.raw_dataset = None
                 st.rerun()
 
-        st.caption("— or upload a DICOM file —")
-        uploaded_dcm = st.file_uploader(
-            "Upload Brain CT Slice (.dcm)",
-            type=["dcm", "dicom"],
+        st.caption("— or upload a CT slice (.dcm, .png, .jpg) —")
+        uploaded_file = st.file_uploader(
+            "Upload CT Slice",
+            type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
             accept_multiple_files=False,
-            help="Upload a single-slice Brain CT DICOM file with RescaleSlope / RescaleIntercept metadata.",
+            help="Upload a Brain CT DICOM file (.dcm) or standard CT image file (.png, .jpg, .tiff).",
         )
 
-        if uploaded_dcm is not None and st.session_state.loaded_source_name != uploaded_dcm.name:
+        if uploaded_file is not None and st.session_state.loaded_source_name != uploaded_file.name:
+            file_name = uploaded_file.name.lower()
             try:
-                ds = load_dicom(uploaded_dcm)
-                hu = convert_to_hounsfield_units(ds)
+                if file_name.endswith((".dcm", ".dicom")):
+                    ds = load_dicom(uploaded_file)
+                    hu = convert_to_hounsfield_units(ds)
+                    meta = get_dicom_metadata(ds)
+                    raw_ds = ds
+                else:
+                    # Standard image format (PNG, JPG, TIFF)
+                    pil_img = Image.open(uploaded_file).convert("L")
+                    arr_gray = np.array(pil_img, dtype=np.float32)
+                    # Map 8-bit [0, 255] grayscale to standard CT brain window range [0, 80 HU]
+                    hu = (arr_gray / 255.0) * 80.0
+                    raw_ds = create_synthetic_dicom_dataset(
+                        hu,
+                        patient_id=f"IMG_{uploaded_file.name[:12]}",
+                        series_desc="Imported Image CT Slice",
+                    )
+                    meta = get_dicom_metadata(raw_ds)
+                    meta["series_description"] = f"Imported Image ({uploaded_file.name})"
+
                 st.session_state.hu_slice = hu
                 st.session_state.clean_slice = None
-                st.session_state.metadata = get_dicom_metadata(ds)
-                st.session_state.raw_dataset = ds
-                st.session_state.loaded_source_name = uploaded_dcm.name
+                st.session_state.metadata = meta
+                st.session_state.raw_dataset = raw_ds
+                st.session_state.loaded_source_name = uploaded_file.name
                 st.session_state.pipeline_results = None
-                st.success(f"Loaded: {uploaded_dcm.name}")
+                st.success(f"Loaded: {uploaded_file.name} ({hu.shape[0]}×{hu.shape[1]})")
             except Exception as e:
-                st.error(f"Error parsing DICOM: {e}")
+                st.error(f"Error loading image: {e}")
 
         st.divider()
 
