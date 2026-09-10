@@ -256,11 +256,11 @@ def init_session_state() -> None:
         st.session_state.poisson_strength = 0.75   # Stronger default for visible denoising
         st.session_state.detail_boost = 1.35        # Enhance anatomical micro-structures
         st.session_state.enable_periodic = True
-        st.session_state.notch_radius = 8.0         # Wider notch to catch thick stripes
+        st.session_state.notch_radius = 3.5         # High-Q narrow notch (preserves surrounding brain frequencies)
         st.session_state.notch_type = "gaussian"
         st.session_state.use_anscombe = True        # Proper Poisson statistics normalization
-        st.session_state.aniso_n_iter = 8
-        st.session_state.aniso_kappa = 15.0
+        st.session_state.aniso_n_iter = 4
+        st.session_state.aniso_kappa = 4.5
         st.session_state.aniso_conduction = "Exponential (Edge Priority)"
         st.session_state.window_center = 40.0
         st.session_state.window_width = 80.0
@@ -271,9 +271,9 @@ def init_session_state() -> None:
     if "processed_cache" not in st.session_state:
         st.session_state.processed_cache = {}
     if "aniso_n_iter" not in st.session_state:
-        st.session_state.aniso_n_iter = 8
+        st.session_state.aniso_n_iter = 4
     if "aniso_kappa" not in st.session_state:
-        st.session_state.aniso_kappa = 15.0
+        st.session_state.aniso_kappa = 4.5
     if "aniso_conduction" not in st.session_state:
         st.session_state.aniso_conduction = "Exponential (Edge Priority)"
     if "window_center" not in st.session_state:
@@ -697,15 +697,15 @@ def main() -> None:
                                     img_f.seek(0)
                                     pil_img = Image.open(img_f).convert("L")
                                     arr_gray = np.array(pil_img, dtype=np.float32)
-                                    # Full clinical HU calibration: air(-1000) → soft tissue(0-80) → bone(400+)
+                                    # Clinically aligned HU calibration: air(-1000) → CSF/parenchyma(0-80) → bone(400+)
                                     norm = arr_gray / 255.0
                                     hu = np.where(
-                                        norm < 0.04,
-                                        -1000.0 + norm * 2000.0,   # Air / background
+                                        norm < 0.05,
+                                        -1000.0 + (norm / 0.05) * 900.0,      # Air / background: -1000 to -100 HU
                                         np.where(
                                             norm > 0.85,
-                                            300.0 + (norm - 0.85) / 0.15 * 1100.0,  # Dense bone 300→1400 HU
-                                            (norm - 0.04) / 0.81 * 400.0 - 50.0,    # Soft tissue -50→350 HU
+                                            150.0 + (norm - 0.85) / 0.15 * 850.0,  # Dense bone: 150→1000 HU
+                                            -5.0 + (norm - 0.05) / 0.80 * 105.0,   # CSF & Brain tissue: -5→100 HU (parenchyma ~35-45 HU)
                                         )
                                     ).astype(np.float32)
 
@@ -856,11 +856,12 @@ def main() -> None:
 
     # ------------------ EXTENDED VIEW ROUTING (From Operations Menu) ------------------
     if nav_op != "👁️ Primary PACS Workstation":
+        def _return_to_pacs_cb() -> None:
+            st.session_state.nav_op_select = "👁️ Primary PACS Workstation"
+
         top_b1, top_b2 = st.columns([1.8, 4.2])
         with top_b1:
-            if st.button("⬅️ Return to Primary PACS Workstation", type="primary", use_container_width=True):
-                st.session_state.nav_op_select = "👁️ Primary PACS Workstation"
-                st.rerun()
+            st.button("⬅️ Return to Primary PACS Workstation", type="primary", on_click=_return_to_pacs_cb, use_container_width=True)
         with top_b2:
             st.markdown(
                 f"<div style='padding-top:6px; color:#94A3B8; font-size:0.85rem; font-family:monospace;'>"
@@ -1098,32 +1099,8 @@ def main() -> None:
         display_orig = apply_window(raw_hu, wc, ww, as_uint8=True)
         display_denoised_raw = apply_window(denoised_hu, wc, ww, as_uint8=True)
 
-        # ── Display-Only Enhancement Pipeline ────────────────────────────────
-        # CLAHE + Unsharp Mask applied only to the rendered uint8 image.
-        # HU data (denoised_hu) is NEVER modified — metrics remain valid.
-        # This makes fine anatomy (tissue planes, vessel walls, trabeculae)
-        # clearly visible that was masked by residual scanner noise.
-        try:
-            _strength = float(st.session_state.get("poisson_strength", 0.75))
-            # CLAHE: Local Adaptive Contrast Enhancement
-            _clip = float(np.clip(1.5 + 1.2 * _strength, 1.2, 4.0))
-            _clahe = cv2.createCLAHE(clipLimit=_clip, tileGridSize=(8, 8))
-            _clahe_out = _clahe.apply(display_denoised_raw)
-            # Unsharp Mask: sharpen edges without adding noise
-            _blur = cv2.GaussianBlur(_clahe_out, (0, 0), sigmaX=1.2)
-            _unsharp_amount = float(np.clip(0.30 + 0.20 * _strength, 0.20, 0.55))
-            _sharpened = cv2.addWeighted(
-                _clahe_out, 1.0 + _unsharp_amount,
-                _blur, -_unsharp_amount, 0
-            ).clip(0, 255).astype(np.uint8)
-            # Blend: 65% enhanced + 35% pure for controlled appearance
-            _blend_w = float(np.clip(0.50 + 0.15 * _strength, 0.45, 0.72))
-            display_denoised = cv2.addWeighted(
-                _sharpened, _blend_w,
-                display_denoised_raw, 1.0 - _blend_w, 0
-            ).clip(0, 255).astype(np.uint8)
-        except Exception:
-            display_denoised = display_denoised_raw  # Failsafe
+        # Pure medical display directly rendered from calibrated HU array (0 artificial blotch filters)
+        display_denoised = display_denoised_raw
         h_img, w_img = display_orig.shape[:2]
 
         # Render Main Image with Interactive Split-Wipe Slider or Side-by-Side
@@ -1164,16 +1141,25 @@ def main() -> None:
         with tool_c1:
             st.markdown(f"<div style='text-align:center; font-weight:700; color:#F8FAFC; padding-top:6px; font-size:0.85rem;'>⟨ Slice {active_idx + 1} / {total_slices} ⟩</div>", unsafe_allow_html=True)
         with tool_c2:
-            if st.button("⛶ Fit", use_container_width=True):
-                st.session_state.window_center = 40.0
-                st.session_state.window_width = 80.0
+            if st.button("⛶ Fit", use_container_width=True, help="Auto-fit Window Level & Width to scan dynamic range"):
+                tissue_vals = raw_hu[raw_hu > -500.0] if np.any(raw_hu > -500.0) else raw_hu.ravel()
+                if len(tissue_vals) > 0:
+                    p02, p98 = np.percentile(tissue_vals, [2.0, 98.0])
+                    calc_ww = max(40.0, float(p98 - p02))
+                    calc_wc = float((p98 + p02) / 2.0)
+                else:
+                    calc_wc, calc_ww = 40.0, 80.0
+                st.session_state.window_center = round(calc_wc, 1)
+                st.session_state.window_width = round(calc_ww, 1)
+                st.session_state.preset_choice = "Custom"
                 st.rerun()
         with tool_c3:
             presets = list(WINDOW_PRESETS.keys())
             cur_p = st.session_state.get("preset_choice", "Brain")
-            p_idx = presets.index(cur_p) if cur_p in presets else 0
-            sel_win = st.selectbox("Window", presets, index=p_idx, label_visibility="collapsed")
-            if sel_win != cur_p:
+            preset_options = presets if cur_p in presets else presets + [cur_p]
+            p_idx = preset_options.index(cur_p) if cur_p in preset_options else 0
+            sel_win = st.selectbox("Window", preset_options, index=p_idx, label_visibility="collapsed")
+            if sel_win != cur_p and sel_win in WINDOW_PRESETS:
                 st.session_state.preset_choice = sel_win
                 st.session_state.window_center = float(WINDOW_PRESETS[sel_win]["center"])
                 st.session_state.window_width = float(WINDOW_PRESETS[sel_win]["width"])

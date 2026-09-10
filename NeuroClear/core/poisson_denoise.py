@@ -205,20 +205,20 @@ def denoise_poisson(
     # Dispatch to edge-preserving filter
     if method in ("anisotropic", "perona_malik", "anisodiff"):
         # Gold-standard PDE anisotropic diffusion operating directly on CT HU scale
-        n_iter = int(p.get("n_iter", max(4, int(6 * strength))))
-        # Physical HU gradient threshold (default 8.0 to 15.0 HU for brain/soft-tissue)
+        n_iter = int(p.get("n_iter", 4))
+        # Physical HU gradient threshold (calibrated to 3.5 to 6.0 HU for subtle brain gyri / sulci)
         user_kappa = p.get("kappa", None)
         if user_kappa is not None:
             hu_kappa = float(user_kappa)
         else:
-            hu_kappa = float(np.clip(10.0 * strength, 4.0, 25.0))
+            hu_kappa = float(np.clip(4.5 * strength, 2.5, 8.0))
         cond_method = str(p.get("conduction_method", "exponential"))
         # Run directly on true HU input for maximum physical precision
         denoised_hu = anisotropic_diffusion_perona_malik(
             img,
             n_iter=n_iter,
             kappa=hu_kappa,
-            gamma=0.125,
+            gamma=0.10,
             conduction_method=cond_method,
             eight_neighbor=True,
         )

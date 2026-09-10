@@ -14,7 +14,7 @@ from scipy import ndimage
 
 def detect_periodic_noise(
     image: np.ndarray,
-    threshold_factor: float = 2.5,
+    threshold_factor: float = 2.8,
     min_distance: int = 4,
     dc_exclude_radius: int = 8,
 ) -> Dict[str, Any]:
@@ -58,16 +58,16 @@ def detect_periodic_noise(
     y_idx, x_idx = np.ogrid[:h, :w]
     dist_from_center = np.sqrt((y_idx - cr) ** 2 + (x_idx - cc) ** 2)
 
-    valid_mask = dist_from_center > dc_exclude_radius
-    # Avoid border edge artifacts (3 pixels from border)
-    valid_mask[:3, :] = False
-    valid_mask[-3:, :] = False
-    valid_mask[:, :3] = False
-    valid_mask[:, -3:] = False
+    valid_mask = (dist_from_center > dc_exclude_radius) & (dist_from_center < min(cr, cc) - 4)
+    # Avoid border edge artifacts
+    valid_mask[:4, :] = False
+    valid_mask[-4:, :] = False
+    valid_mask[:, :4] = False
+    valid_mask[:, -4:] = False
 
-    # Exclude crosshair axes where rectangular frame edge leakage concentrates
-    valid_mask[cr, :] = False
-    valid_mask[:, cc] = False
+    # Exclude crosshair axes (width 3) where rectangular frame edge leakage and text lines concentrate
+    valid_mask[max(0, cr - 1):min(h, cr + 2), :] = False
+    valid_mask[:, max(0, cc - 1):min(w, cc + 2)] = False
 
     # Identify local maxima of the frequency magnitude spectrum
     local_max = (ndimage.maximum_filter(log_mag, size=min_distance) == log_mag)
@@ -89,11 +89,9 @@ def detect_periodic_noise(
     thresh = median_val + (threshold_factor * std_val)
 
     peak_candidates = maxima_mask & (diff >= thresh)
-
     candidate_rows, candidate_cols = np.where(peak_candidates)
 
     peaks: List[Dict[str, Any]] = []
-    # Deduplicate / group conjugate symmetric pairs
     visited = np.zeros((h, w), dtype=bool)
 
     # Sort candidates by diff prominence descending
@@ -101,6 +99,9 @@ def detect_periodic_noise(
     sort_order = np.argsort(-candidate_prominence)
 
     for idx in sort_order:
+        if len(peaks) >= 6:  # Cap at max 6 harmonic pairs to protect anatomical bandwidth
+            break
+
         r = int(candidate_rows[idx])
         c = int(candidate_cols[idx])
 
@@ -115,6 +116,10 @@ def detect_periodic_noise(
         # Conjugate symmetric position in shifted FFT: (cr - u, cc - v)
         conj_r = cr - u
         conj_c = cc - v
+
+        # A genuine scanner periodic artifact exhibits conjugate Fourier symmetry
+        if not (0 <= conj_r < h and 0 <= conj_c < w and diff[conj_r, conj_c] >= thresh * 0.60):
+            continue
 
         peak_info = {
             "row": r,
