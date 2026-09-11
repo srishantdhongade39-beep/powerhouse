@@ -1,0 +1,9 @@
+{
+  "venvPath": "NeuroClear",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "include": [
+    "NeuroClear",
+    "NeuroClear copy"
+  ]
+}
