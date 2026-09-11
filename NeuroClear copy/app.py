@@ -253,15 +253,15 @@ def init_session_state() -> None:
         st.session_state.noise_analyzed = False
         st.session_state.compare_mode = "↔️ Split-Wipe Slider"
         st.session_state.poisson_method = "anisotropic"
-        st.session_state.poisson_strength = 0.75   # Stronger default for visible denoising
-        st.session_state.detail_boost = 1.35        # Enhance anatomical micro-structures
+        st.session_state.poisson_strength = 0.85   # Calibrated for clean noise reduction
+        st.session_state.detail_boost = 1.30        # Enhance anatomical micro-structures
         st.session_state.enable_periodic = True
-        st.session_state.notch_radius = 3.5         # High-Q narrow notch (preserves surrounding brain frequencies)
+        st.session_state.notch_radius = 3.5         # High-Q narrow notch (preserves surrounding frequencies)
         st.session_state.notch_type = "gaussian"
-        st.session_state.use_anscombe = True        # Proper Poisson statistics normalization
-        st.session_state.aniso_n_iter = 4
-        st.session_state.aniso_kappa = 4.5
-        st.session_state.aniso_conduction = "Exponential (Edge Priority)"
+        st.session_state.use_anscombe = False
+        st.session_state.aniso_n_iter = 6
+        st.session_state.aniso_kappa = 12.0
+        st.session_state.aniso_conduction = "Quadratic (Cauchy - Optimal PSNR)"
         st.session_state.window_center = 40.0
         st.session_state.window_width = 80.0
         st.session_state.last_exec_time = 1.42
@@ -271,11 +271,11 @@ def init_session_state() -> None:
     if "processed_cache" not in st.session_state:
         st.session_state.processed_cache = {}
     if "aniso_n_iter" not in st.session_state:
-        st.session_state.aniso_n_iter = 4
+        st.session_state.aniso_n_iter = 6
     if "aniso_kappa" not in st.session_state:
-        st.session_state.aniso_kappa = 4.5
+        st.session_state.aniso_kappa = 12.0
     if "aniso_conduction" not in st.session_state:
-        st.session_state.aniso_conduction = "Exponential (Edge Priority)"
+        st.session_state.aniso_conduction = "Quadratic (Cauchy - Optimal PSNR)"
     if "window_center" not in st.session_state:
         st.session_state.window_center = 40.0
     if "window_width" not in st.session_state:
@@ -777,10 +777,18 @@ def main() -> None:
 
     # Deterministic CT Restoration Pipeline Execution & Caching
     t0 = time.time()
-    aniso_iter = int(st.session_state.get("aniso_n_iter", 8))
-    aniso_k = float(st.session_state.get("aniso_kappa", 15.0))
-    aniso_cond = str(st.session_state.get("aniso_conduction", "Exponential"))
-    cache_key = f"{active_idx}_{wc}_{ww}_{st.session_state.enable_periodic}_{st.session_state.notch_radius}_{st.session_state.notch_type}_{st.session_state.poisson_method}_{st.session_state.poisson_strength}_{st.session_state.detail_boost}_{st.session_state.use_anscombe}_{aniso_iter}_{aniso_k}_{aniso_cond}"
+    aniso_iter = int(st.session_state.get("aniso_n_iter", 6))
+    aniso_k = float(st.session_state.get("aniso_kappa", 12.0))
+    aniso_cond = str(st.session_state.get("aniso_conduction", "Quadratic"))
+    cond_lower = aniso_cond.lower()
+    if "tukey" in cond_lower:
+        resolved_cond = "tukey"
+    elif "quadratic" in cond_lower:
+        resolved_cond = "quadratic"
+    else:
+        resolved_cond = "exponential"
+
+    cache_key = f"{active_idx}_{wc}_{ww}_{st.session_state.enable_periodic}_{st.session_state.notch_radius}_{st.session_state.notch_type}_{st.session_state.poisson_method}_{st.session_state.poisson_strength}_{st.session_state.detail_boost}_{st.session_state.use_anscombe}_{aniso_iter}_{aniso_k}_{resolved_cond}"
     if cache_key not in st.session_state.processed_cache:
         pipeline_opts = {
             "skip_periodic": not st.session_state.enable_periodic,
@@ -794,7 +802,7 @@ def main() -> None:
             "use_anscombe": st.session_state.use_anscombe,
             "n_iter": aniso_iter,
             "kappa": aniso_k,
-            "conduction_method": "exponential" if "Exponential" in aniso_cond else "quadratic",
+            "conduction_method": resolved_cond,
             "window_center": wc,
             "window_width": ww,
             "ground_truth": clean_ref,
@@ -1179,6 +1187,62 @@ def main() -> None:
         if st.button("✨ Denoise with NeuroClear", type="primary", use_container_width=True):
             st.session_state.processed_cache.clear()
             st.rerun()
+
+        # Advanced Diagnostic Clarity & Parameter Fine-Tuning
+        with st.expander("🎛️ Diagnostic Clarity & Advanced Parameters", expanded=False):
+            tune_c1, tune_c2 = st.columns(2)
+            with tune_c1:
+                new_strength = st.slider("Denoising Strength", 0.1, 2.5, float(st.session_state.poisson_strength), 0.05, help="Controls quantum noise filtering intensity")
+                if new_strength != st.session_state.poisson_strength:
+                    st.session_state.poisson_strength = new_strength
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
+
+                new_boost = st.slider("Detail Boost & Sharpness", 1.0, 2.0, float(st.session_state.detail_boost), 0.05, help="Multi-scale edge coring to boost fine anatomical structures")
+                if new_boost != st.session_state.detail_boost:
+                    st.session_state.detail_boost = new_boost
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
+
+            with tune_c2:
+                cond_options = ["Quadratic (Cauchy - Optimal PSNR)", "Tukey Biweight (Strict Edge-Lock)", "Exponential (High Contrast)"]
+                cond_idx = 0
+                for idx_c, c_name in enumerate(cond_options):
+                    if st.session_state.aniso_conduction.split()[0].lower() in c_name.lower():
+                        cond_idx = idx_c
+                        break
+                new_cond = st.selectbox("Edge Conduction Model", cond_options, index=cond_idx, help="PDE anisotropic diffusion edge stopping behavior")
+                if new_cond != st.session_state.aniso_conduction:
+                    st.session_state.aniso_conduction = new_cond
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
+
+                new_kappa = st.slider("Edge Gradient Threshold (κ)", 1.0, 50.0, float(st.session_state.aniso_kappa), 0.5, help="Gradients above κ are locked and preserved without diffusion")
+                if new_kappa != st.session_state.aniso_kappa:
+                    st.session_state.aniso_kappa = new_kappa
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
+
+            # Window Level & Width custom sliders
+            win_c1, win_c2 = st.columns(2)
+            with win_c1:
+                cur_wc = float(st.session_state.window_center)
+                min_wc = -1000.0 if np.min(raw_hu) < -200 else 0.0
+                max_wc = 2000.0 if np.max(raw_hu) > 500 else 255.0
+                new_wc = st.slider("Window Level (L)", min_wc, max_wc, cur_wc, 1.0)
+                if new_wc != cur_wc:
+                    st.session_state.window_center = new_wc
+                    st.session_state.preset_choice = "Custom"
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
+            with win_c2:
+                cur_ww = float(st.session_state.window_width)
+                new_ww = st.slider("Window Width (W)", 1.0, 4000.0 if np.max(raw_hu) > 500 else 512.0, cur_ww, 1.0)
+                if new_ww != cur_ww:
+                    st.session_state.window_width = new_ww
+                    st.session_state.preset_choice = "Custom"
+                    st.session_state.processed_cache.clear()
+                    st.rerun()
 
     # ==================== COLUMN 3: RIGHT PANEL (RESULTS & TELEMETRY HUD) ====================
     with col_right:

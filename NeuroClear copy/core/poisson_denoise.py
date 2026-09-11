@@ -61,13 +61,14 @@ def anisotropic_diffusion_perona_malik(
     Conduction models:
       - 'exponential' (c1): c(g) = exp( -(g / kappa)^2 )  [Preserves high-contrast edges over low-contrast edges]
       - 'quadratic'   (c2): c(g) = 1 / (1 + (g / kappa)^2) [Preserves wider regions over smaller regions]
+      - 'tukey'       (c3): c(g) = (1 - (g / kappa)^2)^2 for |g|<=kappa, 0 for |g|>kappa [Zero edge-blurring lock]
 
     Args:
         image: 2D float array (e.g. in [0, 1] or HU).
         n_iter: Number of diffusion iterations (typically 4 to 20).
         kappa: Edge gradient conduction threshold. Gradients > kappa act as diffusion boundaries.
         gamma: Integration constant / step size (<= 0.25 for 4-neighbor, <= 0.125 for 8-neighbor).
-        conduction_method: 'exponential' or 'quadratic'.
+        conduction_method: 'exponential', 'quadratic', or 'tukey'.
         eight_neighbor: If True, uses 8-directional stencil with diagonal weight 1/sqrt(2).
 
     Returns:
@@ -96,6 +97,11 @@ def anisotropic_diffusion_perona_malik(
             cS = 1.0 / (1.0 + (deltaS / k) ** 2)
             cE = 1.0 / (1.0 + (deltaE / k) ** 2)
             cW = 1.0 / (1.0 + (deltaW / k) ** 2)
+        elif method == "tukey":
+            cN = np.where(np.abs(deltaN) <= k, (1.0 - (deltaN / k) ** 2) ** 2, 0.0)
+            cS = np.where(np.abs(deltaS) <= k, (1.0 - (deltaS / k) ** 2) ** 2, 0.0)
+            cE = np.where(np.abs(deltaE) <= k, (1.0 - (deltaE / k) ** 2) ** 2, 0.0)
+            cW = np.where(np.abs(deltaW) <= k, (1.0 - (deltaW / k) ** 2) ** 2, 0.0)
         else:
             cN = np.exp(-((deltaN / k) ** 2))
             cS = np.exp(-((deltaS / k) ** 2))
@@ -126,6 +132,11 @@ def anisotropic_diffusion_perona_malik(
                 cNW = 1.0 / (1.0 + (deltaNW / k) ** 2)
                 cSE = 1.0 / (1.0 + (deltaSE / k) ** 2)
                 cSW = 1.0 / (1.0 + (deltaSW / k) ** 2)
+            elif method == "tukey":
+                cNE = np.where(np.abs(deltaNE) <= k, (1.0 - (deltaNE / k) ** 2) ** 2, 0.0)
+                cNW = np.where(np.abs(deltaNW) <= k, (1.0 - (deltaNW / k) ** 2) ** 2, 0.0)
+                cSE = np.where(np.abs(deltaSE) <= k, (1.0 - (deltaSE / k) ** 2) ** 2, 0.0)
+                cSW = np.where(np.abs(deltaSW) <= k, (1.0 - (deltaSW / k) ** 2) ** 2, 0.0)
             else:
                 cNE = np.exp(-((deltaNE / k) ** 2))
                 cNW = np.exp(-((deltaNW / k) ** 2))
@@ -206,12 +217,12 @@ def denoise_poisson(
     if method in ("anisotropic", "perona_malik", "anisodiff"):
         # Gold-standard PDE anisotropic diffusion operating directly on CT HU scale
         n_iter = int(p.get("n_iter", 4))
-        # Physical HU gradient threshold (calibrated to 3.5 to 6.0 HU for subtle brain gyri / sulci)
+        # Physical HU gradient threshold (calibrated to 3.5 to 25.0 HU for subtle brain gyri / sulci / trabeculae)
         user_kappa = p.get("kappa", None)
         if user_kappa is not None:
             hu_kappa = float(user_kappa)
         else:
-            hu_kappa = float(np.clip(4.5 * strength, 2.5, 8.0))
+            hu_kappa = float(np.clip(3.5 * effective_sigma * orig_range * strength, 2.5, 30.0))
         cond_method = str(p.get("conduction_method", "exponential"))
         # Run directly on true HU input for maximum physical precision
         denoised_hu = anisotropic_diffusion_perona_malik(
@@ -222,7 +233,7 @@ def denoise_poisson(
             conduction_method=cond_method,
             eight_neighbor=True,
         )
-        return denoised_hu.astype(np.float32)
+        denoised_norm = (denoised_hu - orig_min) / orig_range
 
     elif method == "bilateral":
         # OpenCV bilateralFilter with tissue-calibrated spatial and range sigma
