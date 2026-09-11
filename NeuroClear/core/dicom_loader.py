@@ -58,6 +58,11 @@ WINDOW_PRESETS: Dict[str, Dict[str, Any]] = {
         "width": 256.0,
         "description": "Full Dynamic Range (0 to 255 for standard CT images)",
     },
+    "High Contrast (Angio / Spine)": {
+        "center": 130.0,
+        "width": 240.0,
+        "description": "High Contrast Angio, Vessels & Trabecular Bone",
+    },
 }
 
 
