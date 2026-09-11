@@ -279,7 +279,6 @@ def load_real_clinical_sample() -> None:
         datasets = []
         for idx, fpath in enumerate(img_files):
             pil_img = Image.open(fpath).convert("L")
-            pil_img = pil_img.resize((512, 512), Image.Resampling.BICUBIC)
             arr = np.array(pil_img, dtype=np.float32)
             norm = arr / 255.0
             # Calibrate to realistic CT Hounsfield Units (-1000 HU air to +1000 HU skull bone)
@@ -432,7 +431,7 @@ def render_interactive_split_wipe_component(
         left: 0;
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         pointer-events: none;
       }}
       .curtain-wrap {{
@@ -451,7 +450,7 @@ def render_interactive_split_wipe_component(
         left: 0;
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         max-width: none;
       }}
       .split-line {{
