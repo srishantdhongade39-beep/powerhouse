@@ -1162,8 +1162,22 @@ def main() -> None:
             sel_win = st.selectbox("Window", preset_options, index=p_idx, label_visibility="collapsed")
             if sel_win != cur_p and sel_win in WINDOW_PRESETS:
                 st.session_state.preset_choice = sel_win
-                st.session_state.window_center = float(WINDOW_PRESETS[sel_win]["center"])
-                st.session_state.window_width = float(WINDOW_PRESETS[sel_win]["width"])
+                # Check if image is 8-bit dynamic range [0, 255] vs true HU scale (-1000 to +3000)
+                is_0_255 = bool(np.min(raw_hu) >= -1e-3 and np.max(raw_hu) <= 255.0 + 1e-3)
+                if is_0_255 and sel_win != "Full Range":
+                    if sel_win == "Brain":
+                        st.session_state.window_center = 128.0
+                        st.session_state.window_width = 220.0
+                    elif sel_win == "Bone":
+                        st.session_state.window_center = 175.0
+                        st.session_state.window_width = 160.0
+                    else:
+                        st.session_state.window_center = 128.0
+                        st.session_state.window_width = 256.0
+                else:
+                    st.session_state.window_center = float(WINDOW_PRESETS[sel_win]["center"])
+                    st.session_state.window_width = float(WINDOW_PRESETS[sel_win]["width"])
+                st.session_state.processed_cache.clear()
                 st.rerun()
         with tool_c4:
             alg_options = ["Perona-Malik (Anisotropic)", "NLM", "Bilateral", "TV Chambolle", "Wavelet"]
