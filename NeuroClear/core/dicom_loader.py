@@ -43,10 +43,10 @@ WINDOW_PRESETS: Dict[str, Dict[str, Any]] = {
         "width": 1500.0,
         "description": "Lung Parenchyma & Air Spaces (-1350 to 150 HU)",
     },
-    "Abdomen": {
-        "center": 60.0,
-        "width": 400.0,
-        "description": "Abdominal Organs & Viscera (-140 to 260 HU)",
+    "Abdomen / Soft Tissue (W:350 L:40)": {
+        "center": 40.0,
+        "width": 350.0,
+        "description": "Clinical Abdominal Organs, Liver & Viscera (-135 to 215 HU)",
     },
     "Bone": {
         "center": 400.0,
