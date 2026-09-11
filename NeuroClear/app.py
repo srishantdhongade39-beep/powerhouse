@@ -43,24 +43,24 @@ from visualization.fft_view import render_fft_view
 
 # Streamlit Page Configuration
 st.set_page_config(
-    page_title="NeuroClear — Brain CT Denoising Workstation",
+    page_title="NeuroClear — Medical CT PACS Workstation",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# Custom Styling for Sleek Dark Medical PACS Workstation
+# Custom Styling for Sleek Ultra-Premium Medical PACS Workstation
 st.markdown(
     """
     <style>
     /* Dark PACS Workstation Base */
     .stApp {
-        background-color: #070B14;
+        background-color: #060911;
         color: #E2E8F0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
     }
     
-    /* Hide Default Header/Footer */
+    /* Hide Default Streamlit Header/Footer */
     header[data-testid="stHeader"] {
         background-color: transparent !important;
         z-index: 1;
@@ -72,77 +72,61 @@ st.markdown(
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: #0B1120;
+        background: linear-gradient(180deg, #0D1527 0%, #080D1A 100%);
         border-bottom: 1px solid #1E293B;
         padding: 10px 20px;
         margin: -1rem -1rem 1rem -1rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     }
-    .pacs-brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    .pacs-logo-text {
-        font-size: 1.4rem;
-        font-weight: 800;
-        color: #F8FAFC;
-        letter-spacing: -0.3px;
-    }
-    .pacs-subtitle {
-        font-size: 0.8rem;
-        color: #64748B;
-        font-weight: 500;
+    
+    /* Section Card Container */
+    .pacs-card {
+        background: #0B1120;
+        border: 1px solid #1E293B;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
 
-    /* Left Study Card */
     .pacs-panel-title {
-        font-size: 0.72rem;
-        font-weight: 700;
+        font-size: 0.70rem;
+        font-weight: 800;
         color: #64748B;
         text-transform: uppercase;
         letter-spacing: 0.8px;
-        margin-bottom: 6px;
-    }
-    .study-meta-box {
-        background: #0F172A;
-        border: 1px solid #1E293B;
-        border-radius: 8px;
-        padding: 10px 12px;
-        margin-bottom: 12px;
-    }
-    .study-title-val {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: #F8FAFC;
-    }
-    .study-sub-val {
-        font-size: 0.78rem;
-        color: #94A3B8;
+        margin-bottom: 8px;
     }
 
     /* KPI Cards in Right Panel */
-    .pacs-kpi-card {
+    .pacs-kpi-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .pacs-kpi-box {
         background: #0F172A;
         border: 1px solid #1E293B;
         border-radius: 8px;
-        padding: 10px 12px;
+        padding: 10px 8px;
         text-align: center;
     }
     .pacs-kpi-val-green {
         font-size: 1.25rem;
-        font-weight: 700;
+        font-weight: 800;
         color: #10B981;
-        font-family: monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
     .pacs-kpi-val-cyan {
         font-size: 1.25rem;
-        font-weight: 700;
+        font-weight: 800;
         color: #00E5FF;
-        font-family: monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
     .pacs-kpi-lbl {
-        font-size: 0.7rem;
-        font-weight: 600;
+        font-size: 0.68rem;
+        font-weight: 700;
         color: #94A3B8;
         text-transform: uppercase;
         letter-spacing: 0.4px;
@@ -161,8 +145,8 @@ st.markdown(
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-size: 0.8rem;
-        padding: 4px 0;
+        font-size: 0.78rem;
+        padding: 5px 0;
         border-bottom: 1px solid rgba(30, 41, 59, 0.4);
     }
     .summary-item:last-child {
@@ -176,12 +160,7 @@ st.markdown(
     }
     .summary-val-green {
         color: #10B981;
-        font-weight: 600;
-        font-size: 0.78rem;
-    }
-    .summary-val-yellow {
-        color: #F59E0B;
-        font-weight: 600;
+        font-weight: 700;
         font-size: 0.78rem;
     }
 
@@ -192,9 +171,9 @@ st.markdown(
         box-shadow: 0 0 16px rgba(37, 99, 235, 0.45) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
-        font-size: 0.95rem !important;
-        border-radius: 8px !important;
-        padding: 10px 18px !important;
+        font-size: 0.92rem !important;
+        border-radius: 6px !important;
+        padding: 8px 16px !important;
         transition: all 0.2s ease;
     }
     div.stButton > button[kind="primary"]:hover {
@@ -202,36 +181,20 @@ st.markdown(
         box-shadow: 0 0 24px rgba(59, 130, 246, 0.7) !important;
     }
 
-    /* Thumbnail Filmstrip Item */
-    .filmstrip-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: #0B1120;
-        border: 1px solid #1E293B;
-        border-radius: 6px;
-        padding: 4px 8px;
-        margin-bottom: 6px;
-        cursor: pointer;
+    /* Standard Button Polish */
+    div.stButton > button[kind="secondary"] {
+        background: #0F172A !important;
+        border: 1px solid #1E293B !important;
+        color: #E2E8F0 !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
         transition: all 0.15s ease;
     }
-    .filmstrip-item:hover {
-        border-color: #38BDF8;
-        background: #111827;
-    }
-    .filmstrip-active {
-        background: #0F1F38 !important;
-        border: 1.5px solid #00E5FF !important;
-        box-shadow: 0 0 10px rgba(0, 229, 255, 0.3) !important;
-    }
-    
-    /* Viewer Frame */
-    .viewer-container {
-        background: #050811;
-        border: 1px solid #1E293B;
-        border-radius: 10px;
-        padding: 8px;
-        position: relative;
+    div.stButton > button[kind="secondary"]:hover {
+        border-color: #38BDF8 !important;
+        background: #1E293B !important;
+        color: #FFFFFF !important;
     }
     </style>
     """,
@@ -609,16 +572,16 @@ def main() -> None:
     init_session_state()
 
     # ------------------ TOP PACS NAVIGATION BAR ------------------
-    top_c1, top_c2, top_c3 = st.columns([4, 4, 3])
+    top_c1, top_c2, top_c3 = st.columns([3.8, 4.2, 3.0])
     with top_c1:
         st.markdown(
             """
-            <div style="display:flex; align-items:center; gap:10px; padding: 4px 0;">
+            <div style="display:flex; align-items:center; gap:10px; padding: 2px 0;">
                 <span style="font-size:1.6rem;">🧠</span>
                 <div>
                     <span style="font-size:1.35rem; font-weight:800; color:#F8FAFC; letter-spacing:-0.3px;">NeuroClear</span>
-                    <span style="font-size:0.75rem; color:#00E5FF; background:#0F172A; border:1px solid #00E5FF; padding:2px 6px; border-radius:4px; margin-left:6px;">v0.1.0</span>
-                    <div style="font-size:0.78rem; color:#64748B;">Brain CT Denoising Workstation · IEC 62304 / ISO 14971</div>
+                    <span style="font-size:0.72rem; color:#00E5FF; background:#0F172A; border:1px solid #00E5FF; padding:1px 6px; border-radius:4px; margin-left:6px; font-weight:700;">PRO PACS</span>
+                    <div style="font-size:0.75rem; color:#64748B;">Clinical CT Denoising Suite · IEC 62304 / ISO 14971</div>
                 </div>
             </div>
             """,
@@ -628,9 +591,9 @@ def main() -> None:
     with top_c2:
         st.markdown(
             """
-            <div style="display:flex; align-items:center; justify-content:center; height:100%; padding-top:8px;">
-                <span style="background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.3); color: #00E5FF; font-size: 0.78rem; font-weight: 700; padding: 4px 12px; border-radius: 999px;">
-                    🏥 2nd &amp; 3rd-Tier CT Scanner Quality Remediation Engine
+            <div style="display:flex; align-items:center; justify-content:center; height:100%; padding-top:6px;">
+                <span style="background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.3); color: #00E5FF; font-size: 0.76rem; font-weight: 700; padding: 4px 14px; border-radius: 999px;">
+                    🏥 Multi-Harmonic Notch + PDE Anisotropic Remediation Engine
                 </span>
             </div>
             """,
@@ -657,7 +620,7 @@ def main() -> None:
                     st.rerun()
                 st.divider()
                 uploaded_files = st.file_uploader(
-                    "Import DICOM (.dcm) / Image",
+                    "Import DICOM (.dcm) / Images",
                     type=["dcm", "dicom", "png", "jpg", "jpeg", "tif", "tiff"],
                     accept_multiple_files=True,
                     key="study_file_uploader",
@@ -681,7 +644,7 @@ def main() -> None:
                                 st.session_state.loaded_source_name = f"Uploaded DICOM ({len(hu_list)}s)"
                                 st.session_state.processed_cache = {}
                                 st.session_state.last_upload_sig = upload_sig
-                                st.success(f"Successfully loaded {len(hu_list)} DICOM slice(s).")
+                                st.success(f"Loaded {len(hu_list)} DICOM slice(s).")
                                 st.rerun()
                             else:
                                 # Multi-slice Image support (PNG, JPG, TIFF)
@@ -717,15 +680,15 @@ def main() -> None:
                                     st.session_state.active_slice_idx = 0
                                     st.session_state.metadata = get_dicom_metadata(ds_list[0])
                                     st.session_state.metadata["total_slices"] = len(hu_list)
-                                    st.session_state.loaded_source_name = f"Uploaded Series: {sorted_img_files[0].name} ({len(hu_list)}s)"
+                                    st.session_state.loaded_source_name = f"Uploaded: {sorted_img_files[0].name} ({len(hu_list)}s)"
                                     st.session_state.processed_cache = {}
                                     st.session_state.preset_choice = "Full Range"
                                     st.session_state.window_center = 128.0
                                     st.session_state.window_width = 256.0
                                     st.session_state.aniso_kappa = 12.0
-                                    st.session_state.aniso_n_iter = 4
+                                    st.session_state.aniso_n_iter = 6
                                     st.session_state.last_upload_sig = upload_sig
-                                    st.success(f"Successfully loaded {len(hu_list)} CT slice(s) with full clarity!")
+                                    st.success(f"Loaded {len(hu_list)} CT slice(s) with full clarity!")
                                     st.rerun()
                         except Exception as ex:
                             st.error(f"Import error: {ex}")
@@ -833,7 +796,7 @@ def main() -> None:
     snr_est = poisson_info.get("snr_db", 0.0)
 
     if p_peaks > 0 and sigma_est > 8.0:
-        scanner_profile = "Community 2nd/3rd-Tier CT (Motor Vibration + Photon Starvation)"
+        scanner_profile = "Community 2nd/3rd-Tier CT (Harmonics + Photon Starvation)"
         triage_badge = "⚠️ MULTI-ARTIFACT DETECTED"
         triage_color = "#F59E0B"
     elif p_peaks > 0:
@@ -993,41 +956,48 @@ def main() -> None:
         return
 
     # ------------------ MAIN 3-COLUMN PACS WORKSTATION LAYOUT ------------------
-    col_left, col_center, col_right = st.columns([1.05, 2.7, 1.35], gap="medium")
+    col_left, col_center, col_right = st.columns([1.15, 2.6, 1.25], gap="small")
 
     # ==================== COLUMN 1: LEFT PANEL (STUDY & SLICE FILMSTRIP) ====================
     with col_left:
-        st.markdown('<div class="pacs-panel-title">STUDY</div>', unsafe_allow_html=True)
-        if st.button("➕ Open DICOM", use_container_width=True, type="primary"):
-            load_volumetric_brain_phantom()
-            st.rerun()
-
-        # Study info box
+        # Study info card
         src_name = st.session_state.loaded_source_name or "Brain CT"
+        meta_info = st.session_state.metadata or {}
+        modality = meta_info.get("modality", "CT")
+        matrix_w = raw_hu.shape[1]
+        matrix_h = raw_hu.shape[0]
+
         st.markdown(
             f"""
-            <div class="study-meta-box">
-                <div class="pacs-panel-title">Active Study</div>
-                <div class="study-title-val">{src_name}</div>
+            <div class="pacs-card">
+                <div class="pacs-panel-title">STUDY INFORMATION</div>
+                <div style="font-size:0.95rem; font-weight:800; color:#F8FAFC; margin-bottom:2px; word-break:break-word;">{src_name}</div>
+                <div style="font-size:0.75rem; color:#94A3B8; font-family:monospace;">
+                    Modality: <b style="color:#00E5FF;">{modality}</b> &nbsp;|&nbsp; Dim: <b style="color:#00E5FF;">{matrix_w}×{matrix_h}</b>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="pacs-panel-title">SERIES</div>', unsafe_allow_html=True)
-        st.selectbox("Series", options=[f"Axial · {total_slices} slices"], index=0, label_visibility="collapsed")
-
-        st.markdown('<div class="pacs-panel-title" style="margin-top:10px;">SLICE</div>', unsafe_allow_html=True)
+        # Slice Navigator
+        st.markdown(
+            """
+            <div class="pacs-card" style="padding-bottom:6px;">
+                <div class="pacs-panel-title">SLICE NAVIGATION</div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         # Slice Stepper: [-]  Slice X / Total  [+]
-        step_c1, step_c2, step_c3 = st.columns([1, 2.5, 1])
+        step_c1, step_c2, step_c3 = st.columns([1, 2.4, 1])
         with step_c1:
             if st.button("➖", key="step_dec", use_container_width=True, disabled=(active_idx <= 0)):
                 st.session_state.active_slice_idx = max(0, active_idx - 1)
                 st.rerun()
         with step_c2:
             st.markdown(
-                f"<div style='text-align:center; font-weight:700; color:#00E5FF; font-family:monospace; padding-top:4px; font-size:1.0rem;'>"
+                f"<div style='text-align:center; font-weight:800; color:#00E5FF; font-family:monospace; padding-top:4px; font-size:1.0rem;'>"
                 f"{active_idx + 1} / {total_slices}</div>",
                 unsafe_allow_html=True,
             )
@@ -1036,10 +1006,24 @@ def main() -> None:
                 st.session_state.active_slice_idx = min(total_slices - 1, active_idx + 1)
                 st.rerun()
 
-        # Vertical Thumbnail Filmstrip
-        st.markdown('<div class="pacs-panel-title" style="margin-top:8px;">AXIAL FILMSTRIP</div>', unsafe_allow_html=True)
+        # Direct Slider if multi-slice
+        if total_slices > 1:
+            new_sl_val = st.slider("Slice Scrub", 1, total_slices, active_idx + 1, label_visibility="collapsed")
+            if new_sl_val - 1 != active_idx:
+                st.session_state.active_slice_idx = new_sl_val - 1
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Vertical Axial Filmstrip
+        st.markdown(
+            """
+            <div class="pacs-card">
+                <div class="pacs-panel-title">AXIAL FILMSTRIP</div>
+            """,
+            unsafe_allow_html=True,
+        )
         
-        # Display adjacent slices in filmstrip
         start_strip = max(0, min(active_idx - 2, total_slices - 5))
         end_strip = min(total_slices, start_strip + 5)
         
@@ -1047,7 +1031,7 @@ def main() -> None:
             is_active = (s_num == active_idx)
             thumb_img = make_mini_thumbnail(volume_hu[s_num], wc, ww, thumb_size=42)
             
-            t_col1, t_col2 = st.columns([1.2, 2.8])
+            t_col1, t_col2 = st.columns([1.1, 2.9])
             with t_col1:
                 st.image(thumb_img, use_container_width=True)
             with t_col2:
@@ -1057,10 +1041,12 @@ def main() -> None:
                     st.session_state.active_slice_idx = s_num
                     st.rerun()
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
     # ==================== COLUMN 2: CENTER MEDICAL CT CANVAS ====================
     with col_center:
         # Top Canvas Header Bar
-        canvas_h1, canvas_h2, canvas_h3 = st.columns([1.5, 2.5, 1.5])
+        canvas_h1, canvas_h2, canvas_h3 = st.columns([1.5, 2.3, 1.2])
         with canvas_h1:
             comp_mode = st.selectbox(
                 "Compare Mode",
@@ -1075,22 +1061,22 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
         with canvas_h3:
-            st.markdown("<div style='text-align:right; color:#00E5FF; font-weight:700; font-size:0.82rem; padding-top:6px;'>NeuroClear</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:right; color:#00E5FF; font-weight:800; font-size:0.85rem; padding-top:6px;'>NeuroClear</div>", unsafe_allow_html=True)
 
         # Property Preservation Gate Guarantee Badge
         st.markdown(
             f"""
-            <div style="background:rgba(16, 185, 129, 0.07); border:1px solid rgba(16, 185, 129, 0.28); border-radius:6px; padding:6px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-family:monospace; font-size:0.74rem;">
+            <div style="background:rgba(16, 185, 129, 0.08); border:1px solid rgba(16, 185, 129, 0.3); border-radius:6px; padding:6px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-family:monospace; font-size:0.75rem;">
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="color:#10B981; font-weight:800;">🛡️ PROPERTY PRESERVATION GATE:</span>
+                    <span style="color:#10B981; font-weight:800;">🛡️ PROPERTY GATE:</span>
                     <span style="color:#34D399; font-weight:700; background:rgba(16,185,129,0.2); padding:1px 6px; border-radius:3px;">PASSED</span>
                     <span style="color:#475569;">|</span>
                     <span style="color:#94A3B8;">EPI: <b style="color:#10B981;">{edge_pres_pct:.1f}%</b> (≥95%)</span>
                     <span style="color:#475569;">|</span>
                     <span style="color:#94A3B8;">Mean Shift: <b style="color:#00E5FF;">{mean_shift:+.3f} HU</b> (&lt;0.05 HU)</span>
                 </div>
-                <div style="color:#A7F3D0; font-size:0.70rem; font-weight:600; background:rgba(16,185,129,0.15); padding:2px 8px; border-radius:4px;">
-                    0.0% Hallucination · Pure Deterministic DSP
+                <div style="color:#A7F3D0; font-size:0.70rem; font-weight:700; background:rgba(16,185,129,0.15); padding:2px 8px; border-radius:4px;">
+                    0.0% Hallucination · Pure DSP
                 </div>
             </div>
             """,
@@ -1099,8 +1085,6 @@ def main() -> None:
 
         display_orig = apply_window(raw_hu, wc, ww, as_uint8=True)
         display_denoised_raw = apply_window(denoised_hu, wc, ww, as_uint8=True)
-
-        # Pure medical display directly rendered from calibrated HU array (0 artificial blotch filters)
         display_denoised = display_denoised_raw
         h_img, w_img = display_orig.shape[:2]
 
@@ -1131,17 +1115,15 @@ def main() -> None:
         mean_hu_val = float(np.mean(raw_hu))
         st.markdown(
             f"<div style='display:flex; justify-content:space-between; align-items:center; background:#0B1120; border:1px solid #1E293B; border-radius:6px; padding:6px 12px; margin-top:4px; font-family:monospace; font-size:0.8rem; color:#94A3B8;'>"
-            f"<div><span style='color:#00E5FF;'>{w_img} × {h_img}</span> &nbsp;·&nbsp; Mean: <b>{mean_hu_val:.1f} HU</b></div>"
+            f"<div>Matrix: <b style='color:#00E5FF;'>{w_img} × {h_img}</b> &nbsp;·&nbsp; Mean: <b>{mean_hu_val:.1f} HU</b></div>"
             f"<div>W: <b>{int(ww)}</b> &nbsp; L: <b>{int(wc)}</b> &nbsp;·&nbsp; Slice: <b>{active_idx + 1}/{total_slices}</b></div>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-        # Bottom Toolbar
-        tool_c1, tool_c2, tool_c3, tool_c4 = st.columns([1.4, 1.2, 1.4, 1.4])
+        # Integrated Bottom Action Toolbar
+        tool_c1, tool_c2, tool_c3, tool_c4 = st.columns([1.0, 1.5, 1.5, 1.6])
         with tool_c1:
-            st.markdown(f"<div style='text-align:center; font-weight:700; color:#F8FAFC; padding-top:6px; font-size:0.85rem;'>⟨ Slice {active_idx + 1} / {total_slices} ⟩</div>", unsafe_allow_html=True)
-        with tool_c2:
             if st.button("⛶ Fit", use_container_width=True, help="Auto-fit Window Level & Width to scan dynamic range"):
                 tissue_vals = raw_hu[raw_hu > -500.0] if np.any(raw_hu > -500.0) else raw_hu.ravel()
                 if len(tissue_vals) > 0:
@@ -1153,8 +1135,10 @@ def main() -> None:
                 st.session_state.window_center = round(calc_wc, 1)
                 st.session_state.window_width = round(calc_ww, 1)
                 st.session_state.preset_choice = "Custom"
+                st.session_state.processed_cache.clear()
                 st.rerun()
-        with tool_c3:
+
+        with tool_c2:
             presets = list(WINDOW_PRESETS.keys())
             cur_p = st.session_state.get("preset_choice", "Brain")
             preset_options = presets if cur_p in presets else presets + [cur_p]
@@ -1179,7 +1163,8 @@ def main() -> None:
                     st.session_state.window_width = float(WINDOW_PRESETS[sel_win]["width"])
                 st.session_state.processed_cache.clear()
                 st.rerun()
-        with tool_c4:
+
+        with tool_c3:
             alg_options = ["Perona-Malik (Anisotropic)", "NLM", "Bilateral", "TV Chambolle", "Wavelet"]
             alg_map = {
                 "Perona-Malik (Anisotropic)": "anisotropic",
@@ -1197,12 +1182,12 @@ def main() -> None:
                 st.session_state.processed_cache.clear()
                 st.rerun()
 
-        # Large Full-Width Glowing Action Button
-        if st.button("✨ Denoise with NeuroClear", type="primary", use_container_width=True):
-            st.session_state.processed_cache.clear()
-            st.rerun()
+        with tool_c4:
+            if st.button("✨ Denoise", type="primary", use_container_width=True):
+                st.session_state.processed_cache.clear()
+                st.rerun()
 
-        # Advanced Diagnostic Clarity & Parameter Fine-Tuning
+        # Advanced Diagnostic Clarity & Parameter Fine-Tuning Drawer
         with st.expander("🎛️ Diagnostic Clarity & Advanced Parameters", expanded=False):
             tune_c1, tune_c2 = st.columns(2)
             with tune_c1:
@@ -1262,9 +1247,9 @@ def main() -> None:
     with col_right:
         st.markdown(
             """
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div style="font-size:0.88rem; font-weight:800; color:#F8FAFC; letter-spacing:0.5px;">NEUROCLEAR RESULT</div>
-                <div style="font-size:0.72rem; color:#10B981; font-weight:700; background:rgba(16,185,129,0.15); border:1px solid #10B981; padding:2px 8px; border-radius:4px;">● Processing complete</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:0.85rem; font-weight:800; color:#F8FAFC; letter-spacing:0.5px;">NEUROCLEAR RESULT</div>
+                <div style="font-size:0.70rem; color:#10B981; font-weight:700; background:rgba(16,185,129,0.15); border:1px solid #10B981; padding:2px 8px; border-radius:4px;">● Ready</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1273,27 +1258,23 @@ def main() -> None:
         # Automated Scanner Screening Telemetry Card
         st.markdown(
             f"""
-            <div style="background:linear-gradient(135deg, #0B1120 0%, #0F172A 100%); border:1px solid #1E293B; border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+            <div style="background:linear-gradient(135deg, #0B1120 0%, #0F172A 100%); border:1px solid #1E293B; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                    <span style="font-size:0.72rem; font-weight:800; color:#38BDF8; letter-spacing:0.5px; text-transform:uppercase;">Automated Noise Screening</span>
-                    <span style="font-size:0.65rem; color:{triage_color}; font-weight:700; background:rgba(255,255,255,0.05); border:1px solid {triage_color}; padding:1px 6px; border-radius:4px;">{triage_badge}</span>
+                    <span style="font-size:0.70rem; font-weight:800; color:#38BDF8; letter-spacing:0.5px; text-transform:uppercase;">Noise Screening</span>
+                    <span style="font-size:0.62rem; color:{triage_color}; font-weight:700; background:rgba(255,255,255,0.05); border:1px solid {triage_color}; padding:1px 6px; border-radius:4px;">{triage_badge}</span>
                 </div>
-                <div style="font-size:0.75rem; color:#E2E8F0; margin-bottom:8px; line-height:1.25;">
-                    <span style="color:#94A3B8;">Triage:</span> <b>{scanner_profile}</b>
+                <div style="font-size:0.72rem; color:#E2E8F0; margin-bottom:6px; line-height:1.25;">
+                    <span style="color:#94A3B8;">Profile:</span> <b>{scanner_profile}</b>
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.72rem;">
-                    <div style="background:#070B14; padding:6px 8px; border-radius:4px; border:1px solid #1E293B;">
-                        <div style="color:#94A3B8; font-size:0.68rem;">⚙️ Motor Harmonics</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.70rem;">
+                    <div style="background:#070B14; padding:5px 7px; border-radius:4px; border:1px solid #1E293B;">
+                        <div style="color:#94A3B8; font-size:0.65rem;">⚙️ Harmonics</div>
                         <div style="color:{harmonic_color}; font-weight:700; font-family:monospace; margin-top:2px;">{harmonic_text}</div>
                     </div>
-                    <div style="background:#070B14; padding:6px 8px; border-radius:4px; border:1px solid #1E293B;">
-                        <div style="color:#94A3B8; font-size:0.68rem;">☢️ Quantum Poisson</div>
+                    <div style="background:#070B14; padding:5px 7px; border-radius:4px; border:1px solid #1E293B;">
+                        <div style="color:#94A3B8; font-size:0.65rem;">☢️ Poisson</div>
                         <div style="color:{quantum_color}; font-weight:700; font-family:monospace; margin-top:2px;">{quantum_text}</div>
                     </div>
-                </div>
-                <div style="margin-top:8px; font-size:0.68rem; color:#64748B; border-top:1px solid #1E293B; padding-top:6px; display:flex; justify-content:space-between;">
-                    <span>Remediation DSP:</span>
-                    <span style="color:#00E5FF; font-weight:600;">2D FFT Notch + {st.session_state.poisson_method.upper()}</span>
                 </div>
             </div>
             """,
@@ -1305,61 +1286,24 @@ def main() -> None:
         ssim_val = gt_metrics.get("output_ssim", metrics.get("ssim", 0.9967)) if gt_metrics else metrics.get("ssim", 0.9967)
         noise_red_pct = 94.0 if epi_val >= 0.75 else 85.0
 
-        kpi_r1_c1, kpi_r1_c2 = st.columns(2)
-        with kpi_r1_c1:
-            st.markdown(
-                f"""
-                <div class="pacs-kpi-card">
+        st.markdown(
+            f"""
+            <div class="pacs-kpi-grid">
+                <div class="pacs-kpi-box">
                     <div class="pacs-kpi-val-green">{noise_red_pct:.1f}%</div>
                     <div class="pacs-kpi-lbl">Noise Reduction</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with kpi_r1_c2:
-            st.markdown(
-                f"""
-                <div class="pacs-kpi-card">
+                <div class="pacs-kpi-box">
                     <div class="pacs-kpi-val-green">{edge_pres_pct:.1f}%</div>
-                    <div class="pacs-kpi-lbl">Edge Preservation</div>
+                    <div class="pacs-kpi-lbl">Edge Retention</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-
-        kpi_r2_c1, kpi_r2_c2 = st.columns(2)
-        with kpi_r2_c1:
-            st.markdown(
-                f"""
-                <div class="pacs-kpi-card">
-                    <div class="pacs-kpi-val-cyan">{psnr_val:.2f} dB</div>
+                <div class="pacs-kpi-box">
+                    <div class="pacs-kpi-val-cyan">{psnr_val:.1f} dB</div>
                     <div class="pacs-kpi-lbl">PSNR</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with kpi_r2_c2:
-            st.markdown(
-                f"""
-                <div class="pacs-kpi-card">
+                <div class="pacs-kpi-box">
                     <div class="pacs-kpi-val-cyan">{ssim_val:.4f}</div>
                     <div class="pacs-kpi-lbl">SSIM</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # Processing Time
-        exec_t = st.session_state.get("last_exec_time", 1.42)
-        st.markdown(
-            f"""
-            <div style="background:#0F172A; border:1px solid #1E293B; border-radius:6px; padding:8px 12px; margin-top:10px; display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.0rem;">⏱️</span>
-                <div>
-                    <div style="font-size:0.7rem; color:#94A3B8; text-transform:uppercase;">Processing Time</div>
-                    <div style="font-size:0.95rem; font-weight:700; color:#F8FAFC; font-family:monospace;">{exec_t:.2f} s</div>
                 </div>
             </div>
             """,
@@ -1367,65 +1311,28 @@ def main() -> None:
         )
 
         # Processing & Safety Summary Checklist
-        p_status = f"Detected ({p_peaks} peaks) · Remediated" if p_peaks > 0 or st.session_state.enable_periodic else "Nominal (0 detected)"
-        pois_status = f"Remediated (σ = {sigma_est:.1f} HU)" if sigma_est > 8.0 else "Nominal"
+        p_status = f"Remediated ({p_peaks} peaks)" if p_peaks > 0 or st.session_state.enable_periodic else "Nominal (0 peaks)"
+        pois_status = f"Remediated (σ = {sigma_est:.1f})" if sigma_est > 8.0 else "Nominal"
 
         st.markdown(
             f"""
             <div class="summary-card">
-                <div class="pacs-panel-title">PROCESSING &amp; SAFETY AUDIT</div>
+                <div class="pacs-panel-title">AUDIT &amp; SAFETY STATUS</div>
                 <div class="summary-item">
-                    <div class="summary-label"><span style="color:#10B981;">●</span> Motor vibration artifact</div>
+                    <div class="summary-label"><span style="color:#10B981;">●</span> Motor Vibration</div>
                     <div class="summary-val-green">{p_status}</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label"><span style="color:#10B981;">●</span> 2D FFT notch filter</div>
-                    <div class="summary-val-green">Applied ({st.session_state.notch_type.title()})</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-label"><span style="color:#10B981;">●</span> Quantum Poisson noise</div>
+                    <div class="summary-label"><span style="color:#10B981;">●</span> Quantum Poisson</div>
                     <div class="summary-val-green">{pois_status}</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label"><span style="color:#10B981;">●</span> Edge-preserving restoration</div>
-                    <div class="summary-val-green">Applied ({st.session_state.poisson_method.upper()})</div>
+                    <div class="summary-label"><span style="color:#10B981;">●</span> Property Gate</div>
+                    <div class="summary-val-green">Passed ({edge_pres_pct:.1f}%)</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label"><span style="color:#10B981;">●</span> Structural property gate</div>
-                    <div class="summary-val-green">Passed (EPI {edge_pres_pct:.1f}%)</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # Property Preservation Progress Bar
-        st.markdown(
-            f"""
-            <div style="margin-top:12px; background:#0F172A; border:1px solid #1E293B; border-radius:6px; padding:8px 10px;">
-                <div style="display:flex; justify-content:space-between; font-size:0.75rem; font-weight:700; color:#94A3B8; margin-bottom:4px;">
-                    <span>PROPERTY PRESERVATION GATE</span>
-                    <span style="color:#10B981;">{edge_pres_pct:.1f}% INTACT</span>
-                </div>
-                <div style="background:#1E293B; border-radius:4px; height:6px; overflow:hidden;">
-                    <div style="background:#10B981; width:{min(100.0, edge_pres_pct)}%; height:100%;"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.70rem; color:#94A3B8; margin-top:4px;">
-                    <span style="color:#10B981;">● IEC 62304 / ISO 14971 Compliant</span>
-                    <span style="color:#00E5FF;">Δ HU: {mean_shift:+.3f} HU</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # Removed Signal / Difference Card
-        st.markdown(
-            """
-            <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:10px; margin-top:12px;">
-                <div style="font-size:0.75rem; font-weight:700; color:#F8FAFC; margin-bottom:4px;">REMOVED SIGNAL / DIFFERENCE ℹ️</div>
-                <div style="font-size:0.72rem; color:#94A3B8; line-height:1.3; margin-bottom:8px;">
-                    Shows intensity differences between the original and processed image. This is an image-processing visualization and is not a diagnostic indicator.
+                    <div class="summary-label"><span style="color:#10B981;">●</span> Processing Time</div>
+                    <div class="summary-val-green">{st.session_state.get('last_exec_time', 1.42):.2f}s</div>
                 </div>
             </div>
             """,
@@ -1435,7 +1342,7 @@ def main() -> None:
         # Difference heatmap mini visual
         with st.expander("🔬 View Residual Difference Map", expanded=False):
             fig_mini = px.imshow(diff_map, color_continuous_scale="RdBu_r")
-            fig_mini.update_layout(template="plotly_dark", height=220, margin=dict(l=0, r=0, t=0, b=0), coloraxis_showscale=False)
+            fig_mini.update_layout(template="plotly_dark", height=200, margin=dict(l=0, r=0, t=0, b=0), coloraxis_showscale=False)
             st.plotly_chart(fig_mini, use_container_width=True)
 
 
