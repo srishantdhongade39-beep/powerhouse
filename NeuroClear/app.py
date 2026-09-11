@@ -217,14 +217,14 @@ def init_session_state() -> None:
         st.session_state.compare_mode = "↔️ Split-Wipe Slider"
         st.session_state.poisson_method = "anisotropic"
         st.session_state.poisson_strength = 0.85   # Calibrated for clean noise reduction
-        st.session_state.detail_boost = 1.30        # Enhance anatomical micro-structures
+        st.session_state.detail_boost = 1.45        # High-acutance edge enhancement
         st.session_state.enable_periodic = True
         st.session_state.notch_radius = 3.5         # High-Q narrow notch (preserves surrounding frequencies)
         st.session_state.notch_type = "gaussian"
         st.session_state.use_anscombe = False
         st.session_state.aniso_n_iter = 6
-        st.session_state.aniso_kappa = 12.0
-        st.session_state.aniso_conduction = "Quadratic (Cauchy - Optimal PSNR)"
+        st.session_state.aniso_kappa = 15.0
+        st.session_state.aniso_conduction = "Tukey Biweight (Strict Edge-Lock)"
         st.session_state.window_center = 40.0
         st.session_state.window_width = 80.0
         st.session_state.last_exec_time = 1.42
@@ -236,9 +236,9 @@ def init_session_state() -> None:
     if "aniso_n_iter" not in st.session_state:
         st.session_state.aniso_n_iter = 6
     if "aniso_kappa" not in st.session_state:
-        st.session_state.aniso_kappa = 12.0
+        st.session_state.aniso_kappa = 15.0
     if "aniso_conduction" not in st.session_state:
-        st.session_state.aniso_conduction = "Quadratic (Cauchy - Optimal PSNR)"
+        st.session_state.aniso_conduction = "Tukey Biweight (Strict Edge-Lock)"
     if "window_center" not in st.session_state:
         st.session_state.window_center = 40.0
     if "window_width" not in st.session_state:

@@ -300,10 +300,10 @@ def denoise_poisson(
     texture_residual = filter_input - denoised_norm
 
     if detail_boost > 1.001:
-        # Apply soft coring threshold calibrated to noise sigma to isolate anatomical structures from photon fluctuations
-        coring_tau = float(np.clip(0.70 * strength * effective_sigma, 0.01, 0.10))
+        # Adaptive edge-preserving coring: isolates true anatomical structures from stochastic photon noise
+        coring_tau = float(np.clip(0.35 * effective_sigma, 0.004, 0.045))
         detail_clean = np.sign(texture_residual) * np.maximum(0.0, np.abs(texture_residual) - coring_tau)
-        # Boost true anatomical micro-structures (sulci, gyri, trabeculae, cortices)
+        # Boost true anatomical micro-structures (sulci, gyri, trabeculae, vessel cortices)
         denoised_norm = np.clip(denoised_norm + (detail_boost - 1.0) * detail_clean, 0.0, 1.0)
 
     # Blend subtle natural texture to preserve realistic clinical CT parenchyma appearance
